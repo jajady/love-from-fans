@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paint App</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <aside>
+        <ul class="pallet">
+          <li>
+            <button class="red selected" data-color="red">red</button>
+          </li>
+          <li>
+            <button class="blue" data-color="blue">blue</button>
+          </li>
+          <li>
+            <button class="black" data-color="black">black</button>
+          </li>
+          <li>
+            <button class="green" data-color="green">green</button>
+          </li>
+        </ul>
+        <ul>
+          <li>
+            <button class="control-btn" id="eraser">지우개</button>
+          </li>
+          <li>
+            <button class="control-btn" id="download">저장</button>
+          </li>
+          <li>
+            <a class="gallery-link" href="/gallery.html">갤러리</a>
+          </li>
+        </ul>
+      </aside>
+      <canvas width="600" height="400"></canvas>
+    </main>
+    <script src="main.js"></script>
+  </body>
+</html>
