@@ -4,17 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Paint App Gallery</title>
-    <link rel="stylesheet" href="gallery.css" />
+    <link rel="stylesheet" href="styles/gallery.css" />
   </head>
   <body class="gallery">
     <header class="gallery-header">
       <h1>저장된 그림</h1>
-      <a class="gallery-link" href="/">그림판으로 돌아가기</a>
+      <div class="gallery-actions">
+        <a class="gallery-link" href="/luux.html">Luux</a>
+        <a class="gallery-link" href="/">그림판으로 돌아가기</a>
+      </div>
     </header>
     <main class="gallery-main">
       <div class="gallery-grid" id="galleryGrid"></div>
       <p class="gallery-empty" id="galleryEmpty">아직 저장된 그림이 없습니다.</p>
     </main>
-    <script src="js/gallery.js"></script>
+    <script src="scripts/gallery.js"></script>
   </body>
 </html>
