@@ -6,13 +6,11 @@
 
 body {
   background-color: #000;
-  background-image: url("../assets/favorite.png");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
   min-height: 100vh;
   font-family: "Helvetica Neue", Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .luux-title {
@@ -20,4 +18,38 @@ body {
   color: #fff;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
   padding: 24px;
+}
+
+.luux-stage {
+  position: relative;
+  width: min(1560px, 120vw);
+  max-width: 100%;
+}
+
+.luux-base {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.luux-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.luux-overlay img {
+  width: 12.5%;
+  height: auto;
+  display: block;
+}
+
+.luux-empty {
+  margin-top: 16px;
+  color: #bdbdbd;
+  font-size: 12px;
 }
