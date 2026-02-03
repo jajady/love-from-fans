@@ -59,7 +59,7 @@ async function listImages() {
   );
 
   return stats
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .sort((a, b) => a.mtimeMs - b.mtimeMs)
     .map((entry) => ({
       filename: entry.name,
       url: `/uploads/${entry.name}`,
