@@ -8,9 +8,12 @@ const downloadBtn = document.querySelector("#download");
 // 그리기 설정
 let isDrawing = false;
 let isErasing = false;
+const ERASER_SIZE = 20;
 
 ctx.lineWidth = 5;
 ctx.strokeStyle = "red";
+ctx.lineCap = "round";
+ctx.lineJoin = "round";
 
 // 이벤트 리스너
 function startDrawing(e) {
@@ -22,8 +25,13 @@ function startDrawing(e) {
 function drawing(e) {
   if (!isDrawing) return;
   if (isErasing) {
-    // 지우개
-    ctx.clearRect(e.offsetX, e.offsetY, 20, 20);
+    // 지우개(선 지우기)
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.lineWidth = ERASER_SIZE;
+    ctx.lineTo(e.offsetX, e.offsetY);
+    ctx.stroke();
+    ctx.restore();
   } else {
     // 그리기
     ctx.lineTo(e.offsetX, e.offsetY);
