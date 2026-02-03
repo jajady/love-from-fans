@@ -5,50 +5,19 @@
 }
 
 body {
-  background-color: lightgray;
+  background-color: #000;
+  background-image: url("../assets/favorite.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   min-height: 100vh;
   font-family: "Helvetica Neue", Arial, sans-serif;
 }
 
-.luux-page {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  padding: 40px 20px;
-}
-
-.luux-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  max-width: 960px;
-  width: 100%;
-}
-
 .luux-title {
   font-size: 24px;
-}
-
-.luux-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 160px;
-  height: 36px;
-  border-radius: 6px;
-  background: #2f2f2f;
   color: #fff;
-  text-decoration: none;
-  font-size: 12px;
-}
-
-.luux-main {
-  max-width: 960px;
-  width: 100%;
-}
-
-.luux-empty {
-  text-align: center;
-  color: #666;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  padding: 24px;
 }
