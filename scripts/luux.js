@@ -1,5 +1,16 @@
 const overlayEl = document.querySelector("#luuxOverlay");
 const emptyEl = document.querySelector("#luuxEmpty");
+const known = new Set();
+const POLL_MS = 4000;
+
+function appendItem(item) {
+  const img = document.createElement("img");
+  img.src = item.url;
+  img.alt = item.filename;
+  img.loading = "lazy";
+  overlayEl.appendChild(img);
+  known.add(item.filename);
+}
 
 async function loadLuux() {
   try {
@@ -14,11 +25,9 @@ async function loadLuux() {
 
     emptyEl.style.display = "none";
     items.forEach((item) => {
-      const img = document.createElement("img");
-      img.src = item.url;
-      img.alt = item.filename;
-      img.loading = "lazy";
-      overlayEl.appendChild(img);
+      if (!known.has(item.filename)) {
+        appendItem(item);
+      }
     });
   } catch (err) {
     emptyEl.textContent = "그림을 불러오지 못했습니다.";
@@ -27,3 +36,4 @@ async function loadLuux() {
 }
 
 loadLuux();
+setInterval(loadLuux, POLL_MS);
