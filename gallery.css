@@ -18,66 +18,6 @@ body {
   font-family: "Helvetica Neue", Arial, sans-serif;
 }
 
-main {
-  display: grid;
-  grid-template-columns: 40px 600px;
-  column-gap: 10px;
-}
-
-button {
-  width: 40px;
-  height: 40px;
-  margin-bottom: 10px;
-  font-size: 0;
-  border: 2px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.control-btn {
-  font-size: 12px;
-  width: 60px;
-  height: 36px;
-}
-
-canvas {
-  background-color: white;
-  border-radius: 8px;
-}
-
-button.red {
-  background-color: red;
-}
-
-button.green {
-  background-color: green;
-}
-
-button.blue {
-  background-color: blue;
-}
-
-button.black {
-  background-color: black;
-}
-
-button.selected {
-  border: 2px solid white;
-}
-
-.gallery-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 60px;
-  height: 36px;
-  border-radius: 6px;
-  background: #2f2f2f;
-  color: #fff;
-  text-decoration: none;
-  font-size: 12px;
-}
-
 body.gallery {
   flex-direction: column;
   align-items: stretch;
@@ -96,6 +36,19 @@ body.gallery {
 
 .gallery-header h1 {
   font-size: 24px;
+}
+
+.gallery-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 140px;
+  height: 36px;
+  border-radius: 6px;
+  background: #2f2f2f;
+  color: #fff;
+  text-decoration: none;
+  font-size: 12px;
 }
 
 .gallery-main {
