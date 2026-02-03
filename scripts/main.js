@@ -11,7 +11,7 @@ let isErasing = false;
 const ERASER_SIZE = 20;
 
 ctx.lineWidth = 5;
-ctx.strokeStyle = "red";
+ctx.strokeStyle = "black";
 ctx.lineCap = "round";
 ctx.lineJoin = "round";
 
