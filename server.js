@@ -113,6 +113,58 @@ async function handleUpload(req, res) {
   });
 }
 
+async function readJsonBody(req) {
+  return await new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > MAX_BODY_SIZE) {
+        reject(new Error("Payload too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(body || "{}"));
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
+async function handleDelete(req, res, url) {
+  let filename = url.searchParams.get("filename");
+  if (!filename && req.method === "POST") {
+    try {
+      const body = await readJsonBody(req);
+      filename = body.filename;
+    } catch (err) {
+      send(res, 400, "Invalid JSON body", { "Content-Type": "text/plain; charset=utf-8" });
+      return;
+    }
+  }
+
+  if (!filename) {
+    send(res, 400, "Missing filename", { "Content-Type": "text/plain; charset=utf-8" });
+    return;
+  }
+
+  const filePath = safeUploadsPath(filename);
+  try {
+    await fsp.unlink(filePath);
+    send(res, 200, JSON.stringify({ filename }), {
+      "Content-Type": "application/json; charset=utf-8",
+    });
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      send(res, 404, "Not Found", { "Content-Type": "text/plain; charset=utf-8" });
+      return;
+    }
+    send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -128,6 +180,15 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && url.pathname === "/api/upload") {
     await handleUpload(req, res);
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname === "/api/delete") {
+    await handleDelete(req, res, url);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/delete") {
+    await handleDelete(req, res, url);
     return;
   }
 

@@ -84,6 +84,22 @@ body.gallery {
   word-break: break-all;
 }
 
+.gallery-delete {
+  margin-top: 10px;
+  width: 100%;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: #d64545;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gallery-delete:hover {
+  background: #c23b3b;
+}
+
 .gallery-empty {
   margin-top: 20px;
   text-align: center;
