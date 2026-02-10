@@ -1,5 +1,6 @@
 const canvas = document.querySelector("canvas");
 const ctx = canvas.getContext("2d");
+canvas.style.touchAction = "none";
 
 const colorBtns = document.querySelectorAll(".pallet button");
 const eraserBtn = document.querySelector("#eraser");
@@ -33,36 +34,70 @@ function restoreSnapshot() {
 }
 
 // 이벤트 리스너
+function getCanvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (e.touches && e.touches.length > 0) {
+    return {
+      x: e.touches[0].clientX - rect.left,
+      y: e.touches[0].clientY - rect.top,
+    };
+  }
+  if (e.changedTouches && e.changedTouches.length > 0) {
+    return {
+      x: e.changedTouches[0].clientX - rect.left,
+      y: e.changedTouches[0].clientY - rect.top,
+    };
+  }
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top,
+  };
+}
+
 function startDrawing(e) {
+  if (e.button !== undefined && e.button !== 0) return;
   isDrawing = true;
   hasStroke = false;
+  if (e.pointerId !== undefined && canvas.setPointerCapture) {
+    canvas.setPointerCapture(e.pointerId);
+  }
+  const { x, y } = getCanvasPoint(e);
   ctx.beginPath();
-  ctx.moveTo(e.offsetX, e.offsetY);
+  ctx.moveTo(x, y);
 }
 
 function drawing(e) {
   if (!isDrawing) return;
   hasStroke = true;
+  const { x, y } = getCanvasPoint(e);
   if (isErasing) {
     // 지우개(선 지우기)
     ctx.save();
     ctx.globalCompositeOperation = "destination-out";
     ctx.lineWidth = ERASER_SIZE;
-    ctx.lineTo(e.offsetX, e.offsetY);
+    ctx.lineTo(x, y);
     ctx.stroke();
     ctx.restore();
   } else {
     // 그리기
-    ctx.lineTo(e.offsetX, e.offsetY);
+    ctx.lineTo(x, y);
     ctx.stroke();
   }
 }
 
-function stopDrawing() {
+function stopDrawing(e) {
+  if (!isDrawing) return;
   isDrawing = false;
   ctx.closePath();
   if (hasStroke) {
     saveSnapshot();
+  }
+  if (e && e.pointerId !== undefined && canvas.releasePointerCapture) {
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch (err) {
+      // ignore
+    }
   }
 }
 
@@ -116,9 +151,13 @@ function changeColor(e) {
 }
 
 // 이벤트 연결
-canvas.addEventListener("mousedown", startDrawing);
-canvas.addEventListener("mousemove", drawing);
-canvas.addEventListener("mouseup", stopDrawing);
+canvas.addEventListener("pointerdown", startDrawing, { passive: false });
+canvas.addEventListener("pointermove", drawing, { passive: false });
+canvas.addEventListener("pointerup", stopDrawing);
+canvas.addEventListener("pointerleave", stopDrawing);
+canvas.addEventListener("pointercancel", stopDrawing);
+window.addEventListener("pointerup", stopDrawing);
+window.addEventListener("pointercancel", stopDrawing);
 colorBtns.forEach((button) => button.addEventListener("click", changeColor));
 eraserBtn.addEventListener("click", startErasing);
 downloadBtn.addEventListener("click", downloadCanvas);
