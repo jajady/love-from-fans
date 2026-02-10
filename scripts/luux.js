@@ -1,6 +1,6 @@
 const overlayEl = document.querySelector("#luuxOverlay");
 const emptyEl = document.querySelector("#luuxEmpty");
-const known = new Set();
+const itemEls = new Map();
 const POLL_MS = 4000;
 
 function appendItem(item) {
@@ -9,7 +9,38 @@ function appendItem(item) {
   img.alt = item.filename;
   img.loading = "lazy";
   overlayEl.appendChild(img);
-  known.add(item.filename);
+  itemEls.set(item.filename, img);
+}
+
+function removeItem(filename) {
+  const el = itemEls.get(filename);
+  if (!el) return;
+  el.remove();
+  itemEls.delete(filename);
+}
+
+function syncOverlay(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    overlayEl.replaceChildren();
+    itemEls.clear();
+    emptyEl.style.display = "block";
+    return;
+  }
+
+  emptyEl.style.display = "none";
+  const next = new Set(items.map((item) => item.filename));
+
+  itemEls.forEach((_, filename) => {
+    if (!next.has(filename)) {
+      removeItem(filename);
+    }
+  });
+
+  items.forEach((item) => {
+    if (!itemEls.has(item.filename)) {
+      appendItem(item);
+    }
+  });
 }
 
 async function loadLuux() {
@@ -17,21 +48,12 @@ async function loadLuux() {
     const res = await fetch("/api/list");
     if (!res.ok) throw new Error("Failed to load list");
     const items = await res.json();
-
-    if (!Array.isArray(items) || items.length === 0) {
-      emptyEl.style.display = "block";
-      return;
-    }
-
-    emptyEl.style.display = "none";
-    items.forEach((item) => {
-      if (!known.has(item.filename)) {
-        appendItem(item);
-      }
-    });
+    syncOverlay(items);
   } catch (err) {
     emptyEl.textContent = "그림을 불러오지 못했습니다.";
-    emptyEl.style.display = "block";
+    if (itemEls.size === 0) {
+      emptyEl.style.display = "block";
+    }
   }
 }
 
