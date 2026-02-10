@@ -13,6 +13,7 @@ let isErasing = false;
 const ERASER_SIZE = 20;
 let hasStroke = false;
 const history = [];
+const MAX_HISTORY = 20;
 
 ctx.lineWidth = 5;
 ctx.strokeStyle = "black";
@@ -21,6 +22,9 @@ ctx.lineJoin = "round";
 
 function saveSnapshot() {
   history.push(canvas.toDataURL("image/png", 1.0));
+  while (history.length > MAX_HISTORY) {
+    history.shift();
+  }
 }
 
 function restoreSnapshot() {
