@@ -41,16 +41,22 @@ body {
 
 .luux-overlay {
   position: absolute;
-  inset: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  gap: 12px;
-  padding: 12px;
+  top: 0;
+  left: 1152px;
+  width: 3576px;
+  height: 5760px;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  align-content: start;
+  gap: 50px;
+  padding-top: 100px;
+  padding-left: 100px;
+  padding-right: 100px;
+  padding-bottom: 0;
 }
 
 .luux-overlay img {
-  width: 8%;
+  width: 100%;
   height: auto;
   display: block;
 }
