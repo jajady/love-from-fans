@@ -3,11 +3,31 @@ const emptyEl = document.querySelector("#luuxEmpty");
 const itemEls = new Map();
 const POLL_MS = 4000;
 
+function isFiniteNumber(value) {
+  return Number.isFinite(value);
+}
+
+function applyLayout(el, item) {
+  if (isFiniteNumber(item.x)) {
+    el.style.left = `${item.x}px`;
+  }
+  if (isFiniteNumber(item.y)) {
+    el.style.top = `${item.y}px`;
+  }
+  if (isFiniteNumber(item.w)) {
+    el.style.width = `${item.w}px`;
+  }
+  if (isFiniteNumber(item.h)) {
+    el.style.height = `${item.h}px`;
+  }
+}
+
 function appendItem(item) {
   const img = document.createElement("img");
   img.src = item.url;
   img.alt = item.filename;
   img.loading = "lazy";
+  applyLayout(img, item);
   overlayEl.appendChild(img);
   itemEls.set(item.filename, img);
 }
@@ -41,15 +61,18 @@ function syncOverlay(items) {
   });
 
   items.forEach((item) => {
-    if (!itemEls.has(item.filename)) {
-      appendItem(item);
+    const existing = itemEls.get(item.filename);
+    if (existing) {
+      applyLayout(existing, item);
+      return;
     }
+    appendItem(item);
   });
 }
 
 async function loadLuux() {
   try {
-    const res = await fetch("/api/list");
+    const res = await fetch("/api/slots");
     if (!res.ok) throw new Error("Failed to load list");
     const items = await res.json();
     syncOverlay(items);

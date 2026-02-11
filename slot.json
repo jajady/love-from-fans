@@ -1,0 +1,374 @@
+[
+  {
+    "slot": 1,
+    "row": 0,
+    "col": 0
+  },
+  {
+    "slot": 2,
+    "row": 0,
+    "col": 1
+  },
+  {
+    "slot": 3,
+    "row": 0,
+    "col": 2
+  },
+  {
+    "slot": 4,
+    "row": 0,
+    "col": 3
+  },
+  {
+    "slot": 5,
+    "row": 0,
+    "col": 4
+  },
+  {
+    "slot": 6,
+    "row": 0,
+    "col": 5
+  },
+  {
+    "slot": 7,
+    "row": 1,
+    "col": 0
+  },
+  {
+    "slot": 8,
+    "row": 1,
+    "col": 1
+  },
+  {
+    "slot": 9,
+    "row": 1,
+    "col": 2
+  },
+  {
+    "slot": 10,
+    "row": 1,
+    "col": 3
+  },
+  {
+    "slot": 11,
+    "row": 1,
+    "col": 4
+  },
+  {
+    "slot": 12,
+    "row": 1,
+    "col": 5
+  },
+  {
+    "slot": 13,
+    "row": 2,
+    "col": 0
+  },
+  {
+    "slot": 14,
+    "row": 2,
+    "col": 1
+  },
+  {
+    "slot": 15,
+    "row": 2,
+    "col": 2
+  },
+  {
+    "slot": 16,
+    "row": 2,
+    "col": 3
+  },
+  {
+    "slot": 17,
+    "row": 2,
+    "col": 4
+  },
+  {
+    "slot": 18,
+    "row": 2,
+    "col": 5
+  },
+  {
+    "slot": 19,
+    "row": 3,
+    "col": 0
+  },
+  {
+    "slot": 20,
+    "row": 3,
+    "col": 1
+  },
+  {
+    "slot": 21,
+    "row": 3,
+    "col": 2,
+    "disabled": true
+  },
+  {
+    "slot": 22,
+    "row": 3,
+    "col": 3,
+    "disabled": true
+  },
+  {
+    "slot": 23,
+    "row": 3,
+    "col": 4
+  },
+  {
+    "slot": 24,
+    "row": 3,
+    "col": 5
+  },
+  {
+    "slot": 25,
+    "row": 4,
+    "col": 0,
+    "disabled": true
+  },
+  {
+    "slot": 26,
+    "row": 4,
+    "col": 1,
+    "disabled": true
+  },
+  {
+    "slot": 27,
+    "row": 4,
+    "col": 2,
+    "disabled": true
+  },
+  {
+    "slot": 28,
+    "row": 4,
+    "col": 3,
+    "disabled": true
+  },
+  {
+    "slot": 29,
+    "row": 4,
+    "col": 4,
+    "disabled": true
+  },
+  {
+    "slot": 30,
+    "row": 4,
+    "col": 5
+  },
+  {
+    "slot": 31,
+    "row": 5,
+    "col": 0,
+    "disabled": true
+  },
+  {
+    "slot": 32,
+    "row": 5,
+    "col": 1,
+    "disabled": true
+  },
+  {
+    "slot": 33,
+    "row": 5,
+    "col": 2,
+    "disabled": true
+  },
+  {
+    "slot": 34,
+    "row": 5,
+    "col": 3,
+    "disabled": true
+  },
+  {
+    "slot": 35,
+    "row": 5,
+    "col": 4,
+    "disabled": true
+  },
+  {
+    "slot": 36,
+    "row": 5,
+    "col": 5
+  },
+  {
+    "slot": 37,
+    "row": 6,
+    "col": 0
+  },
+  {
+    "slot": 38,
+    "row": 6,
+    "col": 1
+  },
+  {
+    "slot": 39,
+    "row": 6,
+    "col": 2
+  },
+  {
+    "slot": 40,
+    "row": 6,
+    "col": 3
+  },
+  {
+    "slot": 41,
+    "row": 6,
+    "col": 4
+  },
+  {
+    "slot": 42,
+    "row": 6,
+    "col": 5
+  },
+  {
+    "slot": 43,
+    "row": 7,
+    "col": 0
+  },
+  {
+    "slot": 44,
+    "row": 7,
+    "col": 1
+  },
+  {
+    "slot": 45,
+    "row": 7,
+    "col": 2
+  },
+  {
+    "slot": 46,
+    "row": 7,
+    "col": 3
+  },
+  {
+    "slot": 47,
+    "row": 7,
+    "col": 4
+  },
+  {
+    "slot": 48,
+    "row": 7,
+    "col": 5
+  },
+  {
+    "slot": 49,
+    "row": 8,
+    "col": 0
+  },
+  {
+    "slot": 50,
+    "row": 8,
+    "col": 1
+  },
+  {
+    "slot": 51,
+    "row": 8,
+    "col": 2
+  },
+  {
+    "slot": 52,
+    "row": 8,
+    "col": 3
+  },
+  {
+    "slot": 53,
+    "row": 8,
+    "col": 4
+  },
+  {
+    "slot": 54,
+    "row": 8,
+    "col": 5
+  },
+  {
+    "slot": 55,
+    "row": 9,
+    "col": 0
+  },
+  {
+    "slot": 56,
+    "row": 9,
+    "col": 1
+  },
+  {
+    "slot": 57,
+    "row": 9,
+    "col": 2
+  },
+  {
+    "slot": 58,
+    "row": 9,
+    "col": 3
+  },
+  {
+    "slot": 59,
+    "row": 9,
+    "col": 4
+  },
+  {
+    "slot": 60,
+    "row": 9,
+    "col": 5
+  },
+  {
+    "slot": 61,
+    "row": 10,
+    "col": 0
+  },
+  {
+    "slot": 62,
+    "row": 10,
+    "col": 1
+  },
+  {
+    "slot": 63,
+    "row": 10,
+    "col": 2
+  },
+  {
+    "slot": 64,
+    "row": 10,
+    "col": 3
+  },
+  {
+    "slot": 65,
+    "row": 10,
+    "col": 4
+  },
+  {
+    "slot": 66,
+    "row": 10,
+    "col": 5
+  },
+  {
+    "slot": 67,
+    "row": 11,
+    "col": 0
+  },
+  {
+    "slot": 68,
+    "row": 11,
+    "col": 1
+  },
+  {
+    "slot": 69,
+    "row": 11,
+    "col": 2
+  },
+  {
+    "slot": 70,
+    "row": 11,
+    "col": 3
+  },
+  {
+    "slot": 71,
+    "row": 11,
+    "col": 4
+  },
+  {
+    "slot": 72,
+    "row": 11,
+    "col": 5
+  }
+]

@@ -7,7 +7,6 @@ const { URL } = require("url");
 const PORT = 3000;
 const ROOT_DIR = __dirname;
 const UPLOAD_DIR = path.join(ROOT_DIR, "uploads");
-const LAYOUT_FILE = path.join(UPLOAD_DIR, "layout.json");
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
 
 const STAGE_WIDTH = 4728;
@@ -20,6 +19,10 @@ const PADDING_LEFT = 100;
 const PADDING_RIGHT = 100;
 const GAP = 50;
 const COLUMNS = 6;
+const SLOT_COUNT = 24;
+const SLOT_FILE = path.join(ROOT_DIR, "slot.json");
+const DEFAULT_IMAGE_WIDTH = 600;
+const DEFAULT_IMAGE_HEIGHT = 400;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 const MIME_TYPES = {
@@ -97,37 +100,54 @@ async function getPngSize(filePath) {
   }
 }
 
-async function readLayout() {
+function roundLayoutValue(value) {
+  return Math.round(value);
+}
+
+function isFiniteNumber(value) {
+  return Number.isFinite(value);
+}
+
+async function readSlotDefinitions() {
   try {
-    const raw = await fsp.readFile(LAYOUT_FILE, "utf-8");
-    const parsed = JSON.parse(raw || "{}");
-    if (parsed && Array.isArray(parsed.items)) {
-      const items = parsed.items.filter((item) => item && typeof item.filename === "string");
-      return { items, order: items.map((item) => item.filename) };
+    const raw = await fsp.readFile(SLOT_FILE, "utf-8");
+    const parsed = JSON.parse(raw || "[]");
+    const slots = Array.isArray(parsed) ? parsed : parsed?.slots;
+    if (!Array.isArray(slots)) {
+      throw new Error("slot.json must be an array or { slots: [...] }");
     }
-    if (parsed && Array.isArray(parsed.order)) {
-      return { items: [], order: parsed.order.filter((name) => typeof name === "string") };
+    if (slots.length < SLOT_COUNT) {
+      throw new Error(`slot.json must contain at least ${SLOT_COUNT} slots`);
     }
-    return { items: [], order: [] };
+    return slots
+      .map((slot, index) => {
+        const disabled = slot?.disabled === true || slot?.enabled === false;
+        const row = Number(slot?.row);
+        const col = Number(slot?.col);
+        if (!disabled && (!Number.isFinite(row) || !Number.isFinite(col))) {
+          throw new Error(`slot ${index + 1} missing row/col`);
+        }
+        return {
+          slot: Number.isFinite(slot?.slot) ? Number(slot.slot) : index + 1,
+          row: Number.isFinite(row) ? row : null,
+          col: Number.isFinite(col) ? col : null,
+          x: Number.isFinite(slot?.x) ? Number(slot.x) : null,
+          y: Number.isFinite(slot?.y) ? Number(slot.y) : null,
+          w: Number.isFinite(slot?.w) ? Number(slot.w) : null,
+          h: Number.isFinite(slot?.h) ? Number(slot.h) : null,
+          disabled,
+        };
+      })
+      .sort((a, b) => a.slot - b.slot);
   } catch (err) {
     if (err.code === "ENOENT") {
-      return { items: [], order: [] };
+      throw new Error("slot.json not found");
     }
     throw err;
   }
 }
 
-async function writeLayout(items) {
-  await ensureUploadDir();
-  const payload = JSON.stringify({ items }, null, 2);
-  await fsp.writeFile(LAYOUT_FILE, payload);
-}
-
-function roundLayoutValue(value) {
-  return Math.round(value);
-}
-
-async function buildLayout() {
+async function getOrderedImages() {
   await ensureUploadDir();
   const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
   const files = entries
@@ -141,66 +161,11 @@ async function buildLayout() {
     })
   );
 
+  stats.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  const ordered = stats.map((entry) => entry.name);
   const statMap = new Map(stats.map((entry) => [entry.name, entry.mtimeMs]));
-  const layout = await readLayout();
-  const existingSet = new Set(files);
-  const savedOrder = layout.order.filter((name) => existingSet.has(name));
-  const missing = stats
-    .filter((entry) => !savedOrder.includes(entry.name))
-    .sort((a, b) => a.mtimeMs - b.mtimeMs)
-    .map((entry) => entry.name);
-  const order = savedOrder.concat(missing);
 
-  if (order.length === 0) {
-    return { items: [], order };
-  }
-
-  const cellWidth =
-    (OVERLAY_WIDTH - PADDING_LEFT - PADDING_RIGHT - GAP * (COLUMNS - 1)) / COLUMNS;
-  const leftOrigin = OVERLAY_LEFT + PADDING_LEFT;
-
-  const baseItems = await Promise.all(
-    order.map(async (name, index) => {
-      const col = index % COLUMNS;
-      const row = Math.floor(index / COLUMNS);
-      let height = cellWidth;
-      try {
-        const size = await getPngSize(path.join(UPLOAD_DIR, name));
-        height = (cellWidth * size.height) / size.width;
-      } catch (err) {
-        // Fallback to square if size can't be read
-      }
-      return {
-        filename: name,
-        col,
-        row,
-        w: roundLayoutValue(cellWidth),
-        h: roundLayoutValue(height),
-        updatedAt: statMap.get(name) || Date.now(),
-      };
-    })
-  );
-
-  const rowHeights = new Map();
-  baseItems.forEach((item) => {
-    rowHeights.set(item.row, Math.max(rowHeights.get(item.row) || 0, item.h));
-  });
-
-  const rowCount = Math.max(...baseItems.map((item) => item.row)) + 1;
-  const rowOffsets = new Map();
-  let currentY = PADDING_TOP;
-  for (let row = 0; row < rowCount; row += 1) {
-    rowOffsets.set(row, currentY);
-    currentY += (rowHeights.get(row) || 0) + GAP;
-  }
-
-  const items = baseItems.map((item) => ({
-    ...item,
-    x: roundLayoutValue(leftOrigin + item.col * (cellWidth + GAP)),
-    y: roundLayoutValue(rowOffsets.get(item.row) || PADDING_TOP),
-  }));
-
-  return { items, order };
+  return { ordered, statMap };
 }
 
 async function serveStatic(res, filePath) {
@@ -219,12 +184,74 @@ async function serveStatic(res, filePath) {
 }
 
 async function listImages() {
-  const { items } = await buildLayout();
-  await writeLayout(items);
-  return items.map((item) => ({
-    ...item,
-    url: `/uploads/${item.filename}`,
+  const { ordered } = await getOrderedImages();
+  return ordered.map((name) => ({
+    filename: name,
+    url: `/uploads/${name}`,
   }));
+}
+
+async function listSlots() {
+  const slotDefs = await readSlotDefinitions();
+  const { ordered, statMap } = await getOrderedImages();
+
+  const activeSlots = slotDefs.filter(
+    (slot) => !slot.disabled && Number.isFinite(slot.row) && Number.isFinite(slot.col)
+  );
+  if (activeSlots.length < SLOT_COUNT) {
+    throw new Error(`slot.json must have at least ${SLOT_COUNT} enabled slots`);
+  }
+
+  const visibleSlots = activeSlots.slice(0, SLOT_COUNT);
+  const visibleImages = ordered.slice(0, SLOT_COUNT);
+
+  if (visibleImages.length === 0) {
+    return [];
+  }
+
+  const cellWidth =
+    (OVERLAY_WIDTH - PADDING_LEFT - PADDING_RIGHT - GAP * (COLUMNS - 1)) / COLUMNS;
+  const cellHeight = (cellWidth * DEFAULT_IMAGE_HEIGHT) / DEFAULT_IMAGE_WIDTH;
+  const leftOrigin = OVERLAY_LEFT + PADDING_LEFT;
+
+  const count = Math.min(visibleSlots.length, visibleImages.length);
+  const items = await Promise.all(
+    visibleSlots.slice(0, count).map(async (slot, index) => {
+      const filename = visibleImages[index] || null;
+      if (!filename) {
+        return null;
+      }
+      const width = isFiniteNumber(slot.w) ? slot.w : cellWidth;
+      let height = isFiniteNumber(slot.h) ? slot.h : cellHeight;
+      try {
+        const size = await getPngSize(path.join(UPLOAD_DIR, filename));
+        height = (width * size.height) / size.width;
+      } catch (err) {
+        // fallback to default aspect ratio
+      }
+
+      const x = isFiniteNumber(slot.x)
+        ? slot.x
+        : leftOrigin + slot.col * (cellWidth + GAP);
+      const y = isFiniteNumber(slot.y)
+        ? slot.y
+        : PADDING_TOP + slot.row * (cellHeight + GAP);
+
+      return {
+        filename,
+        row: slot.row,
+        col: slot.col,
+        x: roundLayoutValue(x),
+        y: roundLayoutValue(y),
+        w: roundLayoutValue(width),
+        h: roundLayoutValue(height),
+        updatedAt: statMap.get(filename) || Date.now(),
+        url: `/uploads/${filename}`,
+      };
+    })
+  );
+
+  return items.filter(Boolean);
 }
 
 function safeUploadsPath(urlPath) {
@@ -263,8 +290,6 @@ async function handleUpload(req, res) {
       const filename = await uniqueFilename(`paint-${timestamp}.png`);
       const filepath = path.join(UPLOAD_DIR, filename);
       await fsp.writeFile(filepath, buffer);
-      const { items } = await buildLayout();
-      await writeLayout(items);
 
       const payload = JSON.stringify({
         filename,
@@ -317,8 +342,6 @@ async function handleDelete(req, res, url) {
   const filePath = safeUploadsPath(filename);
   try {
     await fsp.unlink(filePath);
-    const { items } = await buildLayout();
-    await writeLayout(items);
     send(res, 200, JSON.stringify({ filename }), {
       "Content-Type": "application/json; charset=utf-8",
     });
@@ -337,6 +360,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/list") {
     try {
       const items = await listImages();
+      send(res, 200, JSON.stringify(items), { "Content-Type": "application/json; charset=utf-8" });
+    } catch (err) {
+      send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/slots") {
+    try {
+      const items = await listSlots();
       send(res, 200, JSON.stringify(items), { "Content-Type": "application/json; charset=utf-8" });
     } catch (err) {
       send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
