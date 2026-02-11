@@ -7,7 +7,20 @@ const { URL } = require("url");
 const PORT = 3000;
 const ROOT_DIR = __dirname;
 const UPLOAD_DIR = path.join(ROOT_DIR, "uploads");
+const LAYOUT_FILE = path.join(UPLOAD_DIR, "layout.json");
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+
+const STAGE_WIDTH = 4728;
+const STAGE_HEIGHT = 5760;
+const OVERLAY_LEFT = 1152;
+const OVERLAY_WIDTH = 3576;
+const OVERLAY_HEIGHT = 5760;
+const PADDING_TOP = 100;
+const PADDING_LEFT = 100;
+const PADDING_RIGHT = 100;
+const GAP = 50;
+const COLUMNS = 6;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -25,8 +38,169 @@ function send(res, status, body, headers = {}) {
   res.end(body);
 }
 
+function padNumber(value, length) {
+  return String(value).padStart(length, "0");
+}
+
+function formatKstTimestamp(ms) {
+  const kst = new Date(ms + KST_OFFSET_MS);
+  const year = kst.getUTCFullYear();
+  const month = padNumber(kst.getUTCMonth() + 1, 2);
+  const day = padNumber(kst.getUTCDate(), 2);
+  const hours = padNumber(kst.getUTCHours(), 2);
+  const minutes = padNumber(kst.getUTCMinutes(), 2);
+  const seconds = padNumber(kst.getUTCSeconds(), 2);
+  const millis = padNumber(kst.getUTCMilliseconds(), 3);
+  return `${year}${month}${day}_${hours}${minutes}${seconds}_${millis}`;
+}
+
+async function uniqueFilename(baseName) {
+  const ext = path.extname(baseName);
+  const base = baseName.slice(0, -ext.length);
+  let candidate = baseName;
+  let counter = 1;
+  while (true) {
+    try {
+      await fsp.access(path.join(UPLOAD_DIR, candidate));
+      candidate = `${base}-${counter}${ext}`;
+      counter += 1;
+    } catch (err) {
+      if (err.code === "ENOENT") {
+        return candidate;
+      }
+      throw err;
+    }
+  }
+}
+
 async function ensureUploadDir() {
   await fsp.mkdir(UPLOAD_DIR, { recursive: true });
+}
+
+async function getPngSize(filePath) {
+  const handle = await fsp.open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(24);
+    await handle.read(buffer, 0, 24, 0);
+    const isPng = buffer.readUInt32BE(0) === 0x89504e47;
+    if (!isPng) {
+      throw new Error("Not a PNG");
+    }
+    const width = buffer.readUInt32BE(16);
+    const height = buffer.readUInt32BE(20);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width === 0 || height === 0) {
+      throw new Error("Invalid PNG size");
+    }
+    return { width, height };
+  } finally {
+    await handle.close();
+  }
+}
+
+async function readLayout() {
+  try {
+    const raw = await fsp.readFile(LAYOUT_FILE, "utf-8");
+    const parsed = JSON.parse(raw || "{}");
+    if (parsed && Array.isArray(parsed.items)) {
+      const items = parsed.items.filter((item) => item && typeof item.filename === "string");
+      return { items, order: items.map((item) => item.filename) };
+    }
+    if (parsed && Array.isArray(parsed.order)) {
+      return { items: [], order: parsed.order.filter((name) => typeof name === "string") };
+    }
+    return { items: [], order: [] };
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return { items: [], order: [] };
+    }
+    throw err;
+  }
+}
+
+async function writeLayout(items) {
+  await ensureUploadDir();
+  const payload = JSON.stringify({ items }, null, 2);
+  await fsp.writeFile(LAYOUT_FILE, payload);
+}
+
+function roundLayoutValue(value) {
+  return Math.round(value);
+}
+
+async function buildLayout() {
+  await ensureUploadDir();
+  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
+  const files = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
+    .map((entry) => entry.name);
+
+  const stats = await Promise.all(
+    files.map(async (name) => {
+      const stat = await fsp.stat(path.join(UPLOAD_DIR, name));
+      return { name, mtimeMs: stat.mtimeMs };
+    })
+  );
+
+  const statMap = new Map(stats.map((entry) => [entry.name, entry.mtimeMs]));
+  const layout = await readLayout();
+  const existingSet = new Set(files);
+  const savedOrder = layout.order.filter((name) => existingSet.has(name));
+  const missing = stats
+    .filter((entry) => !savedOrder.includes(entry.name))
+    .sort((a, b) => a.mtimeMs - b.mtimeMs)
+    .map((entry) => entry.name);
+  const order = savedOrder.concat(missing);
+
+  if (order.length === 0) {
+    return { items: [], order };
+  }
+
+  const cellWidth =
+    (OVERLAY_WIDTH - PADDING_LEFT - PADDING_RIGHT - GAP * (COLUMNS - 1)) / COLUMNS;
+  const leftOrigin = OVERLAY_LEFT + PADDING_LEFT;
+
+  const baseItems = await Promise.all(
+    order.map(async (name, index) => {
+      const col = index % COLUMNS;
+      const row = Math.floor(index / COLUMNS);
+      let height = cellWidth;
+      try {
+        const size = await getPngSize(path.join(UPLOAD_DIR, name));
+        height = (cellWidth * size.height) / size.width;
+      } catch (err) {
+        // Fallback to square if size can't be read
+      }
+      return {
+        filename: name,
+        col,
+        row,
+        w: roundLayoutValue(cellWidth),
+        h: roundLayoutValue(height),
+        updatedAt: statMap.get(name) || Date.now(),
+      };
+    })
+  );
+
+  const rowHeights = new Map();
+  baseItems.forEach((item) => {
+    rowHeights.set(item.row, Math.max(rowHeights.get(item.row) || 0, item.h));
+  });
+
+  const rowCount = Math.max(...baseItems.map((item) => item.row)) + 1;
+  const rowOffsets = new Map();
+  let currentY = PADDING_TOP;
+  for (let row = 0; row < rowCount; row += 1) {
+    rowOffsets.set(row, currentY);
+    currentY += (rowHeights.get(row) || 0) + GAP;
+  }
+
+  const items = baseItems.map((item) => ({
+    ...item,
+    x: roundLayoutValue(leftOrigin + item.col * (cellWidth + GAP)),
+    y: roundLayoutValue(rowOffsets.get(item.row) || PADDING_TOP),
+  }));
+
+  return { items, order };
 }
 
 async function serveStatic(res, filePath) {
@@ -45,25 +219,12 @@ async function serveStatic(res, filePath) {
 }
 
 async function listImages() {
-  await ensureUploadDir();
-  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
-  const files = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
-    .map((entry) => entry.name);
-
-  const stats = await Promise.all(
-    files.map(async (name) => {
-      const stat = await fsp.stat(path.join(UPLOAD_DIR, name));
-      return { name, mtimeMs: stat.mtimeMs };
-    })
-  );
-
-  return stats
-    .sort((a, b) => a.mtimeMs - b.mtimeMs)
-    .map((entry) => ({
-      filename: entry.name,
-      url: `/uploads/${entry.name}`,
-    }));
+  const { items } = await buildLayout();
+  await writeLayout(items);
+  return items.map((item) => ({
+    ...item,
+    url: `/uploads/${item.filename}`,
+  }));
 }
 
 function safeUploadsPath(urlPath) {
@@ -98,9 +259,12 @@ async function handleUpload(req, res) {
 
       await ensureUploadDir();
       const buffer = Buffer.from(match[2], "base64");
-      const filename = `paint-${Date.now()}.png`;
+      const timestamp = formatKstTimestamp(Date.now());
+      const filename = await uniqueFilename(`paint-${timestamp}.png`);
       const filepath = path.join(UPLOAD_DIR, filename);
       await fsp.writeFile(filepath, buffer);
+      const { items } = await buildLayout();
+      await writeLayout(items);
 
       const payload = JSON.stringify({
         filename,
@@ -153,6 +317,8 @@ async function handleDelete(req, res, url) {
   const filePath = safeUploadsPath(filename);
   try {
     await fsp.unlink(filePath);
+    const { items } = await buildLayout();
+    await writeLayout(items);
     send(res, 200, JSON.stringify({ filename }), {
       "Content-Type": "application/json; charset=utf-8",
     });
