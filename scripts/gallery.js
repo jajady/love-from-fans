@@ -1,5 +1,9 @@
 const gridEl = document.querySelector("#galleryGrid");
 const emptyEl = document.querySelector("#galleryEmpty");
+const titleEl = document.querySelector(".gallery-header h1");
+const backLink = document.querySelector("#galleryBack");
+const params = new URLSearchParams(window.location.search);
+const folderParam = params.get("folder");
 
 function showEmpty(message) {
   emptyEl.textContent = message;
@@ -42,7 +46,7 @@ function renderGallery(items) {
         const res = await fetch("/api/delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: item.filename }),
+          body: JSON.stringify({ path: item.path || item.filename }),
         });
         if (!res.ok) throw new Error("Delete failed");
         await loadGallery();
@@ -58,9 +62,49 @@ function renderGallery(items) {
   });
 }
 
+function renderFolders(folders) {
+  gridEl.replaceChildren();
+
+  if (!Array.isArray(folders) || folders.length === 0) {
+    showEmpty("폴더가 없습니다.");
+    return;
+  }
+
+  hideEmpty();
+  folders.forEach((folder) => {
+    const card = document.createElement("a");
+    card.className = "gallery-card gallery-folder";
+    card.href = `/gallery.html?folder=${encodeURIComponent(folder.folder)}`;
+
+    const title = document.createElement("p");
+    title.className = "folder-title";
+    title.textContent = folder.folder;
+
+    const count = document.createElement("p");
+    count.className = "folder-count";
+    count.textContent = `${folder.count}장`;
+
+    card.appendChild(title);
+    card.appendChild(count);
+    gridEl.appendChild(card);
+  });
+}
+
+async function loadFolders() {
+  try {
+    const res = await fetch("/api/folders");
+    if (!res.ok) throw new Error("Failed to load folders");
+    const folders = await res.json();
+    renderFolders(folders);
+  } catch (err) {
+    gridEl.replaceChildren();
+    showEmpty("폴더 목록을 불러오지 못했습니다.");
+  }
+}
+
 async function loadGallery() {
   try {
-    const res = await fetch("/api/list");
+    const res = await fetch(`/api/list?folder=${encodeURIComponent(folderParam)}`);
     if (!res.ok) throw new Error("Failed to load gallery");
     const items = await res.json();
     renderGallery(items);
@@ -70,4 +114,17 @@ async function loadGallery() {
   }
 }
 
-loadGallery();
+if (folderParam) {
+  if (titleEl) {
+    titleEl.textContent = `폴더: ${folderParam}`;
+  }
+  if (backLink) {
+    backLink.style.display = "inline-flex";
+  }
+  loadGallery();
+} else {
+  if (backLink) {
+    backLink.style.display = "none";
+  }
+  loadFolders();
+}

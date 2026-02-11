@@ -56,6 +56,10 @@ body.gallery {
   font-size: 12px;
 }
 
+#galleryBack {
+  display: none;
+}
+
 .gallery-main {
   max-width: 960px;
   width: 100%;
@@ -73,6 +77,25 @@ body.gallery {
   border-radius: 12px;
   padding: 12px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.gallery-folder {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.gallery-folder .folder-title {
+  margin-top: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #222;
+}
+
+.gallery-folder .folder-count {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #666;
 }
 
 .gallery-card img {

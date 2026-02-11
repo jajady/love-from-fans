@@ -21,6 +21,7 @@ const GAP = 50;
 const COLUMNS = 6;
 const SLOT_COUNT = 24;
 const SLOT_FILE = path.join(ROOT_DIR, "slot.json");
+const FOLDER_SIZE = 24;
 const DEFAULT_IMAGE_WIDTH = 600;
 const DEFAULT_IMAGE_HEIGHT = 400;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -57,14 +58,14 @@ function formatKstTimestamp(ms) {
   return `${year}${month}${day}_${hours}${minutes}${seconds}_${millis}`;
 }
 
-async function uniqueFilename(baseName) {
+async function uniqueFilename(baseName, dir = UPLOAD_DIR) {
   const ext = path.extname(baseName);
   const base = baseName.slice(0, -ext.length);
   let candidate = baseName;
   let counter = 1;
   while (true) {
     try {
-      await fsp.access(path.join(UPLOAD_DIR, candidate));
+      await fsp.access(path.join(dir, candidate));
       candidate = `${base}-${counter}${ext}`;
       counter += 1;
     } catch (err) {
@@ -78,6 +79,54 @@ async function uniqueFilename(baseName) {
 
 async function ensureUploadDir() {
   await fsp.mkdir(UPLOAD_DIR, { recursive: true });
+}
+
+function isBatchDirName(name) {
+  return /^batch-\d{4}$/.test(name);
+}
+
+async function countPngFiles(dirPath) {
+  const entries = await fsp.readdir(dirPath, { withFileTypes: true });
+  return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".png")).length;
+}
+
+async function getLatestBatchInfo() {
+  await ensureUploadDir();
+  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
+  const batches = entries
+    .filter((entry) => entry.isDirectory() && isBatchDirName(entry.name))
+    .map((entry) => entry.name);
+
+  if (batches.length === 0) {
+    return { name: null, index: 0 };
+  }
+
+  const indices = batches.map((name) => Number(name.replace("batch-", ""))).filter(Number.isFinite);
+  const maxIndex = indices.length ? Math.max(...indices) : 0;
+  const name = maxIndex > 0 ? `batch-${String(maxIndex).padStart(4, "0")}` : null;
+  return { name, index: maxIndex };
+}
+
+async function getUploadTargetDir() {
+  const { name, index } = await getLatestBatchInfo();
+  if (!name) {
+    const first = "batch-0001";
+    const dirPath = path.join(UPLOAD_DIR, first);
+    await fsp.mkdir(dirPath, { recursive: true });
+    return { folder: first, dirPath };
+  }
+
+  const currentDir = path.join(UPLOAD_DIR, name);
+  const count = await countPngFiles(currentDir);
+  if (count < FOLDER_SIZE) {
+    return { folder: name, dirPath: currentDir };
+  }
+
+  const nextIndex = index + 1;
+  const nextName = `batch-${String(nextIndex).padStart(4, "0")}`;
+  const nextDir = path.join(UPLOAD_DIR, nextName);
+  await fsp.mkdir(nextDir, { recursive: true });
+  return { folder: nextName, dirPath: nextDir };
 }
 
 async function getPngSize(filePath) {
@@ -150,20 +199,36 @@ async function readSlotDefinitions() {
 async function getOrderedImages() {
   await ensureUploadDir();
   const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
-  const files = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
-    .map((entry) => entry.name);
+  const files = [];
+
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".png")) {
+      files.push({ name: entry.name, path: entry.name });
+    }
+    if (entry.isDirectory() && isBatchDirName(entry.name)) {
+      const dirPath = path.join(UPLOAD_DIR, entry.name);
+      const inner = await fsp.readdir(dirPath, { withFileTypes: true });
+      inner
+        .filter((child) => child.isFile() && child.name.endsWith(".png"))
+        .forEach((child) => {
+          files.push({
+            name: child.name,
+            path: `${entry.name}/${child.name}`,
+          });
+        });
+    }
+  }
 
   const stats = await Promise.all(
-    files.map(async (name) => {
-      const stat = await fsp.stat(path.join(UPLOAD_DIR, name));
-      return { name, mtimeMs: stat.mtimeMs };
+    files.map(async (file) => {
+      const stat = await fsp.stat(path.join(UPLOAD_DIR, file.path));
+      return { ...file, mtimeMs: stat.mtimeMs };
     })
   );
 
   stats.sort((a, b) => a.mtimeMs - b.mtimeMs);
-  const ordered = stats.map((entry) => entry.name);
-  const statMap = new Map(stats.map((entry) => [entry.name, entry.mtimeMs]));
+  const ordered = stats.map((entry) => entry.path);
+  const statMap = new Map(stats.map((entry) => [entry.path, entry.mtimeMs]));
 
   return { ordered, statMap };
 }
@@ -183,12 +248,56 @@ async function serveStatic(res, filePath) {
   }
 }
 
-async function listImages() {
+async function listImages(folder) {
+  if (folder) {
+    const folderPath = safeUploadsPath(folder);
+    const entries = await fsp.readdir(folderPath, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
+      .map((entry) => entry.name);
+
+    const stats = await Promise.all(
+      files.map(async (name) => {
+        const stat = await fsp.stat(path.join(folderPath, name));
+        return { name, mtimeMs: stat.mtimeMs };
+      })
+    );
+
+    return stats
+      .sort((a, b) => a.mtimeMs - b.mtimeMs)
+      .map((entry) => {
+        const relPath = `${folder}/${entry.name}`;
+        return {
+          filename: entry.name,
+          path: relPath,
+          url: `/uploads/${relPath}`,
+        };
+      });
+  }
+
   const { ordered } = await getOrderedImages();
-  return ordered.map((name) => ({
-    filename: name,
-    url: `/uploads/${name}`,
+  return ordered.map((relPath) => ({
+    filename: path.basename(relPath),
+    path: relPath,
+    url: `/uploads/${relPath}`,
   }));
+}
+
+async function listFolders() {
+  await ensureUploadDir();
+  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
+  const folders = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (!isBatchDirName(entry.name)) continue;
+    const dirPath = path.join(UPLOAD_DIR, entry.name);
+    const count = await countPngFiles(dirPath);
+    folders.push({ folder: entry.name, count });
+  }
+
+  folders.sort((a, b) => a.folder.localeCompare(b.folder));
+  return folders;
 }
 
 async function listSlots() {
@@ -217,14 +326,15 @@ async function listSlots() {
   const count = Math.min(visibleSlots.length, visibleImages.length);
   const items = await Promise.all(
     visibleSlots.slice(0, count).map(async (slot, index) => {
-      const filename = visibleImages[index] || null;
-      if (!filename) {
+      const relPath = visibleImages[index] || null;
+      if (!relPath) {
         return null;
       }
+      const filename = path.basename(relPath);
       const width = isFiniteNumber(slot.w) ? slot.w : cellWidth;
       let height = isFiniteNumber(slot.h) ? slot.h : cellHeight;
       try {
-        const size = await getPngSize(path.join(UPLOAD_DIR, filename));
+        const size = await getPngSize(path.join(UPLOAD_DIR, relPath));
         height = (width * size.height) / size.width;
       } catch (err) {
         // fallback to default aspect ratio
@@ -245,8 +355,8 @@ async function listSlots() {
         y: roundLayoutValue(y),
         w: roundLayoutValue(width),
         h: roundLayoutValue(height),
-        updatedAt: statMap.get(filename) || Date.now(),
-        url: `/uploads/${filename}`,
+        updatedAt: statMap.get(relPath) || Date.now(),
+        url: `/uploads/${relPath}`,
       };
     })
   );
@@ -256,8 +366,15 @@ async function listSlots() {
 
 function safeUploadsPath(urlPath) {
   const decoded = decodeURIComponent(urlPath);
-  const baseName = path.basename(decoded);
-  return path.join(UPLOAD_DIR, baseName);
+  const normalized = path.normalize(decoded).replace(/^(\.\.(\/|\\|$))+/, "");
+  if (path.isAbsolute(normalized)) {
+    throw new Error("Invalid path");
+  }
+  const resolved = path.resolve(UPLOAD_DIR, normalized);
+  if (resolved !== UPLOAD_DIR && !resolved.startsWith(UPLOAD_DIR + path.sep)) {
+    throw new Error("Invalid path");
+  }
+  return resolved;
 }
 
 async function handleUpload(req, res) {
@@ -284,16 +401,17 @@ async function handleUpload(req, res) {
         return;
       }
 
-      await ensureUploadDir();
       const buffer = Buffer.from(match[2], "base64");
       const timestamp = formatKstTimestamp(Date.now());
-      const filename = await uniqueFilename(`paint-${timestamp}.png`);
-      const filepath = path.join(UPLOAD_DIR, filename);
+      const { folder, dirPath } = await getUploadTargetDir();
+      const filename = await uniqueFilename(`paint-${timestamp}.png`, dirPath);
+      const filepath = path.join(dirPath, filename);
       await fsp.writeFile(filepath, buffer);
 
       const payload = JSON.stringify({
         filename,
-        url: `/uploads/${filename}`,
+        path: `${folder}/${filename}`,
+        url: `/uploads/${folder}/${filename}`,
       });
       send(res, 200, payload, { "Content-Type": "application/json; charset=utf-8" });
     } catch (err) {
@@ -323,26 +441,37 @@ async function readJsonBody(req) {
 }
 
 async function handleDelete(req, res, url) {
-  let filename = url.searchParams.get("filename");
-  if (!filename && req.method === "POST") {
+  let target = url.searchParams.get("path") || url.searchParams.get("filename");
+  if (!target && req.method === "POST") {
     try {
       const body = await readJsonBody(req);
-      filename = body.filename;
+      target = body.path || body.filename;
     } catch (err) {
       send(res, 400, "Invalid JSON body", { "Content-Type": "text/plain; charset=utf-8" });
       return;
     }
   }
 
-  if (!filename) {
-    send(res, 400, "Missing filename", { "Content-Type": "text/plain; charset=utf-8" });
+  if (!target) {
+    send(res, 400, "Missing path", { "Content-Type": "text/plain; charset=utf-8" });
     return;
   }
 
-  const filePath = safeUploadsPath(filename);
   try {
+    const filePath = safeUploadsPath(target);
     await fsp.unlink(filePath);
-    send(res, 200, JSON.stringify({ filename }), {
+    const parent = path.dirname(filePath);
+    if (parent !== UPLOAD_DIR) {
+      try {
+        const remaining = await fsp.readdir(parent);
+        if (remaining.length === 0) {
+          await fsp.rmdir(parent);
+        }
+      } catch (err) {
+        // ignore cleanup errors
+      }
+    }
+    send(res, 200, JSON.stringify({ path: target }), {
       "Content-Type": "application/json; charset=utf-8",
     });
   } catch (err) {
@@ -359,8 +488,21 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/list") {
     try {
-      const items = await listImages();
+      const folder = url.searchParams.get("folder");
+      const items = await listImages(folder);
       send(res, 200, JSON.stringify(items), { "Content-Type": "application/json; charset=utf-8" });
+    } catch (err) {
+      send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/folders") {
+    try {
+      const folders = await listFolders();
+      send(res, 200, JSON.stringify(folders), {
+        "Content-Type": "application/json; charset=utf-8",
+      });
     } catch (err) {
       send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
     }
@@ -392,8 +534,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname.startsWith("/uploads/")) {
-    const filePath = safeUploadsPath(url.pathname.replace("/uploads/", ""));
-    await serveStatic(res, filePath);
+    try {
+      const filePath = safeUploadsPath(url.pathname.replace("/uploads/", ""));
+      await serveStatic(res, filePath);
+    } catch (err) {
+      send(res, 400, "Invalid path", { "Content-Type": "text/plain; charset=utf-8" });
+    }
     return;
   }
 
