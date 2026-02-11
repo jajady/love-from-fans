@@ -23,11 +23,15 @@ function syncOverlay(items) {
   if (!Array.isArray(items) || items.length === 0) {
     overlayEl.replaceChildren();
     itemEls.clear();
-    emptyEl.style.display = "block";
+    if (emptyEl) {
+      emptyEl.style.display = "block";
+    }
     return;
   }
 
-  emptyEl.style.display = "none";
+  if (emptyEl) {
+    emptyEl.style.display = "none";
+  }
   const next = new Set(items.map((item) => item.filename));
 
   itemEls.forEach((_, filename) => {
@@ -50,9 +54,11 @@ async function loadLuux() {
     const items = await res.json();
     syncOverlay(items);
   } catch (err) {
-    emptyEl.textContent = "그림을 불러오지 못했습니다.";
-    if (itemEls.size === 0) {
-      emptyEl.style.display = "block";
+    if (emptyEl) {
+      emptyEl.textContent = "그림을 불러오지 못했습니다.";
+      if (itemEls.size === 0) {
+        emptyEl.style.display = "block";
+      }
     }
   }
 }

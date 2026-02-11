@@ -4,13 +4,19 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  width: 4728px;
+  height: 5760px;
+}
+
 body {
   background-color: #000;
-  min-height: 100vh;
   font-family: "Helvetica Neue", Arial, sans-serif;
   display: flex;
   flex-direction: column;
   align-items: center;
+  overflow: auto;
 }
 
 .luux-title {
@@ -22,14 +28,15 @@ body {
 
 .luux-stage {
   position: relative;
-  width: min(1560px, 120vw);
-  max-width: 100%;
+  width: 4728px;
+  height: 5760px;
 }
 
 .luux-base {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
+  object-fit: cover;
 }
 
 .luux-overlay {
