@@ -2,8 +2,10 @@ const gridEl = document.querySelector("#galleryGrid");
 const emptyEl = document.querySelector("#galleryEmpty");
 const titleEl = document.querySelector(".gallery-header h1");
 const backLink = document.querySelector("#galleryBack");
+const trashLink = document.querySelector("#galleryTrash");
 const params = new URLSearchParams(window.location.search);
 const folderParam = params.get("folder");
+const trashParam = params.get("trash");
 
 function showEmpty(message) {
   emptyEl.textContent = message;
@@ -62,6 +64,52 @@ function renderGallery(items) {
   });
 }
 
+function renderTrash(items) {
+  gridEl.replaceChildren();
+
+  if (!Array.isArray(items) || items.length === 0) {
+    showEmpty("휴지통이 비어 있습니다.");
+    return;
+  }
+
+  hideEmpty();
+  items.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "gallery-card";
+
+    const img = document.createElement("img");
+    img.src = item.url;
+    img.alt = item.filename;
+    img.loading = "lazy";
+
+    const label = document.createElement("p");
+    label.textContent = item.filename;
+
+    const restoreBtn = document.createElement("button");
+    restoreBtn.className = "gallery-restore";
+    restoreBtn.type = "button";
+    restoreBtn.textContent = "복원";
+    restoreBtn.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: item.id }),
+        });
+        if (!res.ok) throw new Error("Restore failed");
+        await loadTrash();
+      } catch (err) {
+        alert("복원에 실패했습니다. 서버가 켜져있는지 확인해주세요.");
+      }
+    });
+
+    card.appendChild(img);
+    card.appendChild(label);
+    card.appendChild(restoreBtn);
+    gridEl.appendChild(card);
+  });
+}
+
 function renderFolders(folders) {
   gridEl.replaceChildren();
 
@@ -102,6 +150,18 @@ async function loadFolders() {
   }
 }
 
+async function loadTrash() {
+  try {
+    const res = await fetch("/api/trash");
+    if (!res.ok) throw new Error("Failed to load trash");
+    const items = await res.json();
+    renderTrash(items);
+  } catch (err) {
+    gridEl.replaceChildren();
+    showEmpty("휴지통을 불러오지 못했습니다.");
+  }
+}
+
 async function loadGallery() {
   try {
     const res = await fetch(`/api/list?folder=${encodeURIComponent(folderParam)}`);
@@ -114,17 +174,34 @@ async function loadGallery() {
   }
 }
 
-if (folderParam) {
+if (trashParam) {
+  if (titleEl) {
+    titleEl.textContent = "휴지통";
+  }
+  if (backLink) {
+    backLink.style.display = "inline-flex";
+  }
+  if (trashLink) {
+    trashLink.style.display = "none";
+  }
+  loadTrash();
+} else if (folderParam) {
   if (titleEl) {
     titleEl.textContent = `폴더: ${folderParam}`;
   }
   if (backLink) {
     backLink.style.display = "inline-flex";
   }
+  if (trashLink) {
+    trashLink.style.display = "inline-flex";
+  }
   loadGallery();
 } else {
   if (backLink) {
     backLink.style.display = "none";
+  }
+  if (trashLink) {
+    trashLink.style.display = "inline-flex";
   }
   loadFolders();
 }

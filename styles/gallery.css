@@ -128,6 +128,22 @@ body.gallery {
   background: #c23b3b;
 }
 
+.gallery-restore {
+  margin-top: 10px;
+  width: 100%;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: #2f8f6a;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gallery-restore:hover {
+  background: #2a7f5f;
+}
+
 .gallery-empty {
   margin-top: 20px;
   text-align: center;

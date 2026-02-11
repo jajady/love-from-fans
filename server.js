@@ -22,6 +22,8 @@ const COLUMNS = 6;
 const SLOT_COUNT = 24;
 const SLOT_FILE = path.join(ROOT_DIR, "slot.json");
 const FOLDER_SIZE = 24;
+const TRASH_DIR = path.join(UPLOAD_DIR, "trash");
+const TRASH_MANIFEST = path.join(TRASH_DIR, "manifest.json");
 const DEFAULT_IMAGE_WIDTH = 600;
 const DEFAULT_IMAGE_HEIGHT = 400;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -79,6 +81,33 @@ async function uniqueFilename(baseName, dir = UPLOAD_DIR) {
 
 async function ensureUploadDir() {
   await fsp.mkdir(UPLOAD_DIR, { recursive: true });
+}
+
+async function ensureTrashDir() {
+  await fsp.mkdir(TRASH_DIR, { recursive: true });
+}
+
+async function readTrashManifest() {
+  try {
+    const raw = await fsp.readFile(TRASH_MANIFEST, "utf-8");
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return [];
+    }
+    throw err;
+  }
+}
+
+async function writeTrashManifest(entries) {
+  await ensureTrashDir();
+  const payload = JSON.stringify(entries, null, 2);
+  await fsp.writeFile(TRASH_MANIFEST, payload);
+}
+
+function makeTrashId() {
+  return `trash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function isBatchDirName(name) {
@@ -147,6 +176,73 @@ async function getPngSize(filePath) {
   } finally {
     await handle.close();
   }
+}
+
+async function moveToTrash(relPath) {
+  await ensureTrashDir();
+  const sourcePath = safeUploadsPath(relPath);
+  if (sourcePath.startsWith(TRASH_DIR + path.sep)) {
+    throw new Error("Already in trash");
+  }
+
+  const originalDir = path.dirname(relPath);
+  const targetDir = path.join(TRASH_DIR, originalDir);
+  await fsp.mkdir(targetDir, { recursive: true });
+
+  const filename = path.basename(relPath);
+  const targetName = await uniqueFilename(filename, targetDir);
+  const targetPath = path.join(targetDir, targetName);
+  await fsp.rename(sourcePath, targetPath);
+
+  const trashedRelPath = path
+    .relative(UPLOAD_DIR, targetPath)
+    .split(path.sep)
+    .join("/");
+
+  const entry = {
+    id: makeTrashId(),
+    filename: targetName,
+    originalPath: relPath,
+    trashedPath: trashedRelPath,
+    trashedAt: Date.now(),
+  };
+
+  const manifest = await readTrashManifest();
+  manifest.unshift(entry);
+  await writeTrashManifest(manifest);
+
+  return entry;
+}
+
+async function restoreFromTrash(entry) {
+  await ensureTrashDir();
+  const sourcePath = safeUploadsPath(entry.trashedPath);
+  if (!sourcePath.startsWith(TRASH_DIR + path.sep)) {
+    throw new Error("Invalid trash path");
+  }
+
+  const originalRelPath = entry.originalPath || path.basename(entry.trashedPath);
+  const targetPath = safeUploadsPath(originalRelPath);
+  const targetDir = path.dirname(targetPath);
+  await fsp.mkdir(targetDir, { recursive: true });
+
+  let finalPath = targetPath;
+  try {
+    await fsp.access(finalPath);
+    const uniqueName = await uniqueFilename(path.basename(targetPath), targetDir);
+    finalPath = path.join(targetDir, uniqueName);
+  } catch (err) {
+    if (err.code !== "ENOENT") {
+      throw err;
+    }
+  }
+
+  await fsp.rename(sourcePath, finalPath);
+
+  return path
+    .relative(UPLOAD_DIR, finalPath)
+    .split(path.sep)
+    .join("/");
 }
 
 function roundLayoutValue(value) {
@@ -233,6 +329,58 @@ async function getOrderedImages() {
   return { ordered, statMap };
 }
 
+function batchFolderName(index) {
+  return `batch-${padNumber(index, 4)}`;
+}
+
+async function rebalanceBatches() {
+  const { ordered } = await getOrderedImages();
+  if (ordered.length === 0) {
+    return;
+  }
+
+  for (let i = 0; i < ordered.length; i += 1) {
+    const relPath = ordered[i];
+    const filename = path.basename(relPath);
+    const targetIndex = Math.floor(i / FOLDER_SIZE) + 1;
+    const targetFolder = batchFolderName(targetIndex);
+    const targetDir = path.join(UPLOAD_DIR, targetFolder);
+    const targetRelPath = `${targetFolder}/${filename}`;
+
+    if (relPath === targetRelPath) {
+      continue;
+    }
+
+    await fsp.mkdir(targetDir, { recursive: true });
+
+    const fromPath = path.join(UPLOAD_DIR, relPath);
+    let targetName = filename;
+    const targetPath = path.join(targetDir, targetName);
+    try {
+      await fsp.access(targetPath);
+      targetName = await uniqueFilename(filename, targetDir);
+    } catch (err) {
+      if (err.code !== "ENOENT") {
+        throw err;
+      }
+    }
+
+    await fsp.rename(fromPath, path.join(targetDir, targetName));
+  }
+
+  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !isBatchDirName(entry.name)) {
+      continue;
+    }
+    const dirPath = path.join(UPLOAD_DIR, entry.name);
+    const remaining = await fsp.readdir(dirPath);
+    if (remaining.length === 0) {
+      await fsp.rmdir(dirPath);
+    }
+  }
+}
+
 async function serveStatic(res, filePath) {
   try {
     const data = await fsp.readFile(filePath);
@@ -250,6 +398,11 @@ async function serveStatic(res, filePath) {
 
 async function listImages(folder) {
   if (folder) {
+    try {
+      await rebalanceBatches();
+    } catch (err) {
+      // ignore rebalance errors for listing
+    }
     const folderPath = safeUploadsPath(folder);
     const entries = await fsp.readdir(folderPath, { withFileTypes: true });
     const files = entries
@@ -298,6 +451,30 @@ async function listFolders() {
 
   folders.sort((a, b) => a.folder.localeCompare(b.folder));
   return folders;
+}
+
+async function listTrash() {
+  const manifest = await readTrashManifest();
+  const items = [];
+
+  for (const entry of manifest) {
+    if (!entry || !entry.trashedPath) continue;
+    try {
+      const filePath = safeUploadsPath(entry.trashedPath);
+      await fsp.access(filePath);
+    } catch (err) {
+      continue;
+    }
+    items.push({
+      id: entry.id,
+      filename: entry.filename || path.basename(entry.trashedPath),
+      originalPath: entry.originalPath || "",
+      trashedAt: entry.trashedAt || null,
+      url: `/uploads/${entry.trashedPath}`,
+    });
+  }
+
+  return items;
 }
 
 async function listSlots() {
@@ -458,20 +635,13 @@ async function handleDelete(req, res, url) {
   }
 
   try {
-    const filePath = safeUploadsPath(target);
-    await fsp.unlink(filePath);
-    const parent = path.dirname(filePath);
-    if (parent !== UPLOAD_DIR) {
-      try {
-        const remaining = await fsp.readdir(parent);
-        if (remaining.length === 0) {
-          await fsp.rmdir(parent);
-        }
-      } catch (err) {
-        // ignore cleanup errors
-      }
+    const entry = await moveToTrash(target);
+    try {
+      await rebalanceBatches();
+    } catch (err) {
+      // ignore rebalance failures
     }
-    send(res, 200, JSON.stringify({ path: target }), {
+    send(res, 200, JSON.stringify({ path: entry.trashedPath }), {
       "Content-Type": "application/json; charset=utf-8",
     });
   } catch (err) {
@@ -501,6 +671,50 @@ const server = http.createServer(async (req, res) => {
     try {
       const folders = await listFolders();
       send(res, 200, JSON.stringify(folders), {
+        "Content-Type": "application/json; charset=utf-8",
+      });
+    } catch (err) {
+      send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/trash") {
+    try {
+      const items = await listTrash();
+      send(res, 200, JSON.stringify(items), {
+        "Content-Type": "application/json; charset=utf-8",
+      });
+    } catch (err) {
+      send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/restore") {
+    try {
+      const body = await readJsonBody(req);
+      const id = body.id;
+      if (!id) {
+        send(res, 400, "Missing id", { "Content-Type": "text/plain; charset=utf-8" });
+        return;
+      }
+      const manifest = await readTrashManifest();
+      const idx = manifest.findIndex((entry) => entry.id === id);
+      if (idx === -1) {
+        send(res, 404, "Not Found", { "Content-Type": "text/plain; charset=utf-8" });
+        return;
+      }
+      const entry = manifest[idx];
+      const restoredPath = await restoreFromTrash(entry);
+      manifest.splice(idx, 1);
+      await writeTrashManifest(manifest);
+      try {
+        await rebalanceBatches();
+      } catch (err) {
+        // ignore rebalance failures
+      }
+      send(res, 200, JSON.stringify({ path: restoredPath }), {
         "Content-Type": "application/json; charset=utf-8",
       });
     } catch (err) {
