@@ -16,6 +16,12 @@
         <a class="gallery-link" href="/" target="_blank" rel="noopener">그림판으로 돌아가기</a>
       </div>
     </header>
+    <div class="gallery-controls" id="galleryControls">
+      <label class="gallery-control-label" for="batchSelect">묶음 선택</label>
+      <select class="gallery-select" id="batchSelect"></select>
+      <button class="gallery-batch-select" id="batchApply" type="button">Luux에 표시</button>
+      <span class="gallery-batch-status" id="batchStatus"></span>
+    </div>
     <main class="gallery-main">
       <div class="gallery-grid" id="galleryGrid"></div>
       <p class="gallery-empty" id="galleryEmpty">아직 저장된 그림이 없습니다.</p>
