@@ -6,6 +6,7 @@ const { URL } = require("url");
 
 const PORT = 3000;
 const ROOT_DIR = __dirname;
+const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const UPLOAD_DIR = path.join(ROOT_DIR, "uploads");
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -554,6 +555,17 @@ function safeUploadsPath(urlPath) {
   return resolved;
 }
 
+function safePublicPath(urlPath) {
+  const decoded = decodeURIComponent(urlPath);
+  const normalized = path.normalize(decoded).replace(/^(\.\.(\/|\\|$))+/, "");
+  const relative = normalized.replace(/^[/\\]+/, "");
+  const resolved = path.resolve(PUBLIC_DIR, relative);
+  if (resolved !== PUBLIC_DIR && !resolved.startsWith(PUBLIC_DIR + path.sep)) {
+    throw new Error("Invalid path");
+  }
+  return resolved;
+}
+
 async function handleUpload(req, res) {
   let body = "";
   req.on("data", (chunk) => {
@@ -758,9 +770,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET") {
-    const route = url.pathname === "/" ? "/index.html" : url.pathname;
-    const filePath = path.join(ROOT_DIR, route);
-    await serveStatic(res, filePath);
+    try {
+      const route = url.pathname === "/" ? "index.html" : url.pathname;
+      const filePath = safePublicPath(route);
+      await serveStatic(res, filePath);
+    } catch (err) {
+      send(res, 400, "Invalid path", { "Content-Type": "text/plain; charset=utf-8" });
+    }
     return;
   }
 
