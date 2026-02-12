@@ -1,4 +1,5 @@
 const http = require("http");
+const crypto = require("crypto");
 const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
@@ -7,6 +8,7 @@ const { URL } = require("url");
 const PORT = 3000;
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
+const DATA_DIR = path.join(ROOT_DIR, "data");
 const UPLOAD_DIR = path.join(ROOT_DIR, "uploads");
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -22,12 +24,16 @@ const GAP = 50;
 const COLUMNS = 6;
 const SLOT_COUNT = 24;
 const SLOT_FILE = path.join(ROOT_DIR, "slot.json");
-const FOLDER_SIZE = 24;
-const TRASH_DIR = path.join(UPLOAD_DIR, "trash");
-const TRASH_MANIFEST = path.join(TRASH_DIR, "manifest.json");
+const TRASH_FILE = path.join(DATA_DIR, "trash.json");
+const SELECTION_FILE = path.join(DATA_DIR, "selection.json");
 const DEFAULT_IMAGE_WIDTH = 600;
 const DEFAULT_IMAGE_HEIGHT = 400;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_COOKIE = "admin_session";
+
+const sessions = new Map();
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -43,6 +49,115 @@ const MIME_TYPES = {
 function send(res, status, body, headers = {}) {
   res.writeHead(status, headers);
   res.end(body);
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  if (!header) return {};
+  return header.split(";").reduce((acc, part) => {
+    const [key, ...rest] = part.trim().split("=");
+    if (!key) return acc;
+    acc[key] = decodeURIComponent(rest.join("="));
+    return acc;
+  }, {});
+}
+
+function createSession() {
+  const token = crypto.randomBytes(24).toString("hex");
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  sessions.set(token, expiresAt);
+  return { token, expiresAt };
+}
+
+function getSessionToken(req) {
+  const cookies = parseCookies(req);
+  const token = cookies[SESSION_COOKIE];
+  if (!token) return null;
+  const expiresAt = sessions.get(token);
+  if (!expiresAt) return null;
+  if (Date.now() > expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+  return token;
+}
+
+function setSessionCookie(res, token, req) {
+  const attrs = [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+  ];
+  if (req.headers["x-forwarded-proto"] === "https") {
+    attrs.push("Secure");
+  }
+  res.setHeader("Set-Cookie", attrs.join("; "));
+}
+
+function clearSessionCookie(res, req) {
+  const attrs = [
+    `${SESSION_COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (req.headers["x-forwarded-proto"] === "https") {
+    attrs.push("Secure");
+  }
+  res.setHeader("Set-Cookie", attrs.join("; "));
+}
+
+function requireAdmin(req, res) {
+  const token = getSessionToken(req);
+  if (!token) {
+    send(res, 401, "Unauthorized", { "Content-Type": "text/plain; charset=utf-8" });
+    return false;
+  }
+  return true;
+}
+
+async function handleLogin(req, res) {
+  if (!ADMIN_PASSWORD) {
+    send(res, 500, "Admin password not configured", {
+      "Content-Type": "text/plain; charset=utf-8",
+    });
+    return;
+  }
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    send(res, 400, "Invalid JSON body", { "Content-Type": "text/plain; charset=utf-8" });
+    return;
+  }
+  const password = String(body?.password || "");
+  const expected = String(ADMIN_PASSWORD);
+  const matches =
+    password.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(password), Buffer.from(expected));
+  if (!matches) {
+    send(res, 401, "Unauthorized", { "Content-Type": "text/plain; charset=utf-8" });
+    return;
+  }
+  const session = createSession();
+  setSessionCookie(res, session.token, req);
+  send(res, 200, JSON.stringify({ ok: true }), {
+    "Content-Type": "application/json; charset=utf-8",
+  });
+}
+
+async function handleLogout(req, res) {
+  const token = getSessionToken(req);
+  if (token) {
+    sessions.delete(token);
+  }
+  clearSessionCookie(res, req);
+  send(res, 200, JSON.stringify({ ok: true }), {
+    "Content-Type": "application/json; charset=utf-8",
+  });
 }
 
 function padNumber(value, length) {
@@ -84,13 +199,13 @@ async function ensureUploadDir() {
   await fsp.mkdir(UPLOAD_DIR, { recursive: true });
 }
 
-async function ensureTrashDir() {
-  await fsp.mkdir(TRASH_DIR, { recursive: true });
+async function ensureDataDir() {
+  await fsp.mkdir(DATA_DIR, { recursive: true });
 }
 
-async function readTrashManifest() {
+async function readTrashList() {
   try {
-    const raw = await fsp.readFile(TRASH_MANIFEST, "utf-8");
+    const raw = await fsp.readFile(TRASH_FILE, "utf-8");
     const parsed = JSON.parse(raw || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
@@ -101,62 +216,42 @@ async function readTrashManifest() {
   }
 }
 
-async function writeTrashManifest(entries) {
-  await ensureTrashDir();
+async function writeTrashList(entries) {
+  await ensureDataDir();
   const payload = JSON.stringify(entries, null, 2);
-  await fsp.writeFile(TRASH_MANIFEST, payload);
+  await fsp.writeFile(TRASH_FILE, payload);
+}
+
+async function readSelection() {
+  try {
+    const raw = await fsp.readFile(SELECTION_FILE, "utf-8");
+    const parsed = JSON.parse(raw || "{}");
+    const index = Number(parsed?.batchIndex);
+    return Number.isFinite(index) ? index : null;
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function writeSelection(batchIndex) {
+  await ensureDataDir();
+  const payload = JSON.stringify({ batchIndex }, null, 2);
+  await fsp.writeFile(SELECTION_FILE, payload);
 }
 
 function makeTrashId() {
   return `trash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizeRelPath(relPath) {
+  return relPath.split(path.sep).join("/");
+}
+
 function isBatchDirName(name) {
   return /^batch-\d{4}$/.test(name);
-}
-
-async function countPngFiles(dirPath) {
-  const entries = await fsp.readdir(dirPath, { withFileTypes: true });
-  return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".png")).length;
-}
-
-async function getLatestBatchInfo() {
-  await ensureUploadDir();
-  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
-  const batches = entries
-    .filter((entry) => entry.isDirectory() && isBatchDirName(entry.name))
-    .map((entry) => entry.name);
-
-  if (batches.length === 0) {
-    return { name: null, index: 0 };
-  }
-
-  const indices = batches.map((name) => Number(name.replace("batch-", ""))).filter(Number.isFinite);
-  const maxIndex = indices.length ? Math.max(...indices) : 0;
-  const name = maxIndex > 0 ? `batch-${String(maxIndex).padStart(4, "0")}` : null;
-  return { name, index: maxIndex };
-}
-
-async function getUploadTargetDir() {
-  const { name, index } = await getLatestBatchInfo();
-  if (!name) {
-    const first = "batch-0001";
-    const dirPath = path.join(UPLOAD_DIR, first);
-    await fsp.mkdir(dirPath, { recursive: true });
-    return { folder: first, dirPath };
-  }
-
-  const currentDir = path.join(UPLOAD_DIR, name);
-  const count = await countPngFiles(currentDir);
-  if (count < FOLDER_SIZE) {
-    return { folder: name, dirPath: currentDir };
-  }
-
-  const nextIndex = index + 1;
-  const nextName = `batch-${String(nextIndex).padStart(4, "0")}`;
-  const nextDir = path.join(UPLOAD_DIR, nextName);
-  await fsp.mkdir(nextDir, { recursive: true });
-  return { folder: nextName, dirPath: nextDir };
 }
 
 async function getPngSize(filePath) {
@@ -179,71 +274,39 @@ async function getPngSize(filePath) {
   }
 }
 
-async function moveToTrash(relPath) {
-  await ensureTrashDir();
+async function markAsTrashed(relPath) {
   const sourcePath = safeUploadsPath(relPath);
-  if (sourcePath.startsWith(TRASH_DIR + path.sep)) {
-    throw new Error("Already in trash");
+  await fsp.access(sourcePath);
+
+  const normalized = normalizeRelPath(path.relative(UPLOAD_DIR, sourcePath));
+  const list = await readTrashList();
+  const existing = list.find((entry) => entry.path === normalized);
+  if (existing) {
+    return existing;
   }
-
-  const originalDir = path.dirname(relPath);
-  const targetDir = path.join(TRASH_DIR, originalDir);
-  await fsp.mkdir(targetDir, { recursive: true });
-
-  const filename = path.basename(relPath);
-  const targetName = await uniqueFilename(filename, targetDir);
-  const targetPath = path.join(targetDir, targetName);
-  await fsp.rename(sourcePath, targetPath);
-
-  const trashedRelPath = path
-    .relative(UPLOAD_DIR, targetPath)
-    .split(path.sep)
-    .join("/");
 
   const entry = {
     id: makeTrashId(),
-    filename: targetName,
-    originalPath: relPath,
-    trashedPath: trashedRelPath,
+    filename: path.basename(normalized),
+    path: normalized,
     trashedAt: Date.now(),
   };
 
-  const manifest = await readTrashManifest();
-  manifest.unshift(entry);
-  await writeTrashManifest(manifest);
-
+  list.unshift(entry);
+  await writeTrashList(list);
   return entry;
 }
 
-async function restoreFromTrash(entry) {
-  await ensureTrashDir();
-  const sourcePath = safeUploadsPath(entry.trashedPath);
-  if (!sourcePath.startsWith(TRASH_DIR + path.sep)) {
-    throw new Error("Invalid trash path");
+async function restoreTrashEntry(id) {
+  const list = await readTrashList();
+  const idx = list.findIndex((entry) => entry.id === id);
+  if (idx === -1) {
+    return null;
   }
-
-  const originalRelPath = entry.originalPath || path.basename(entry.trashedPath);
-  const targetPath = safeUploadsPath(originalRelPath);
-  const targetDir = path.dirname(targetPath);
-  await fsp.mkdir(targetDir, { recursive: true });
-
-  let finalPath = targetPath;
-  try {
-    await fsp.access(finalPath);
-    const uniqueName = await uniqueFilename(path.basename(targetPath), targetDir);
-    finalPath = path.join(targetDir, uniqueName);
-  } catch (err) {
-    if (err.code !== "ENOENT") {
-      throw err;
-    }
-  }
-
-  await fsp.rename(sourcePath, finalPath);
-
-  return path
-    .relative(UPLOAD_DIR, finalPath)
-    .split(path.sep)
-    .join("/");
+  const entry = list[idx];
+  list.splice(idx, 1);
+  await writeTrashList(list);
+  return entry;
 }
 
 function roundLayoutValue(value) {
@@ -330,56 +393,30 @@ async function getOrderedImages() {
   return { ordered, statMap };
 }
 
-function batchFolderName(index) {
-  return `batch-${padNumber(index, 4)}`;
+async function getTrashSet() {
+  const list = await readTrashList();
+  return new Set(list.map((entry) => entry.path));
 }
 
-async function rebalanceBatches() {
-  const { ordered } = await getOrderedImages();
-  if (ordered.length === 0) {
-    return;
+function chunkArray(items, size) {
+  const batches = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
   }
+  return batches;
+}
 
-  for (let i = 0; i < ordered.length; i += 1) {
-    const relPath = ordered[i];
-    const filename = path.basename(relPath);
-    const targetIndex = Math.floor(i / FOLDER_SIZE) + 1;
-    const targetFolder = batchFolderName(targetIndex);
-    const targetDir = path.join(UPLOAD_DIR, targetFolder);
-    const targetRelPath = `${targetFolder}/${filename}`;
+function resolveBatchIndex(index, total) {
+  if (!Number.isFinite(total) || total <= 0) return null;
+  if (!Number.isFinite(index)) return 0;
+  if (index < 0) return 0;
+  if (index >= total) return total - 1;
+  return index;
+}
 
-    if (relPath === targetRelPath) {
-      continue;
-    }
-
-    await fsp.mkdir(targetDir, { recursive: true });
-
-    const fromPath = path.join(UPLOAD_DIR, relPath);
-    let targetName = filename;
-    const targetPath = path.join(targetDir, targetName);
-    try {
-      await fsp.access(targetPath);
-      targetName = await uniqueFilename(filename, targetDir);
-    } catch (err) {
-      if (err.code !== "ENOENT") {
-        throw err;
-      }
-    }
-
-    await fsp.rename(fromPath, path.join(targetDir, targetName));
-  }
-
-  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !isBatchDirName(entry.name)) {
-      continue;
-    }
-    const dirPath = path.join(UPLOAD_DIR, entry.name);
-    const remaining = await fsp.readdir(dirPath);
-    if (remaining.length === 0) {
-      await fsp.rmdir(dirPath);
-    }
-  }
+async function getSelectedBatchIndex(total) {
+  const stored = await readSelection();
+  return resolveBatchIndex(stored, total);
 }
 
 async function serveStatic(res, filePath) {
@@ -397,90 +434,68 @@ async function serveStatic(res, filePath) {
   }
 }
 
-async function listImages(folder) {
-  if (folder) {
-    try {
-      await rebalanceBatches();
-    } catch (err) {
-      // ignore rebalance errors for listing
-    }
-    const folderPath = safeUploadsPath(folder);
-    const entries = await fsp.readdir(folderPath, { withFileTypes: true });
-    const files = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
-      .map((entry) => entry.name);
-
-    const stats = await Promise.all(
-      files.map(async (name) => {
-        const stat = await fsp.stat(path.join(folderPath, name));
-        return { name, mtimeMs: stat.mtimeMs };
-      })
-    );
-
-    return stats
-      .sort((a, b) => a.mtimeMs - b.mtimeMs)
-      .map((entry) => {
-        const relPath = `${folder}/${entry.name}`;
-        return {
-          filename: entry.name,
-          path: relPath,
-          url: `/uploads/${relPath}`,
-        };
-      });
-  }
-
+async function listImages() {
   const { ordered } = await getOrderedImages();
-  return ordered.map((relPath) => ({
-    filename: path.basename(relPath),
-    path: relPath,
-    url: `/uploads/${relPath}`,
-  }));
+  const trashSet = await getTrashSet();
+  return ordered
+    .filter((relPath) => !trashSet.has(relPath))
+    .map((relPath) => ({
+      filename: path.basename(relPath),
+      path: relPath,
+      url: `/uploads/${relPath}`,
+    }));
 }
 
 async function listFolders() {
-  await ensureUploadDir();
-  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
-  const folders = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (!isBatchDirName(entry.name)) continue;
-    const dirPath = path.join(UPLOAD_DIR, entry.name);
-    const count = await countPngFiles(dirPath);
-    folders.push({ folder: entry.name, count });
-  }
-
-  folders.sort((a, b) => a.folder.localeCompare(b.folder));
-  return folders;
+  return [];
 }
 
 async function listTrash() {
-  const manifest = await readTrashManifest();
+  const list = await readTrashList();
   const items = [];
 
-  for (const entry of manifest) {
-    if (!entry || !entry.trashedPath) continue;
+  for (const entry of list) {
+    if (!entry || !entry.path) continue;
     try {
-      const filePath = safeUploadsPath(entry.trashedPath);
+      const filePath = safeUploadsPath(entry.path);
       await fsp.access(filePath);
     } catch (err) {
       continue;
     }
     items.push({
       id: entry.id,
-      filename: entry.filename || path.basename(entry.trashedPath),
-      originalPath: entry.originalPath || "",
+      filename: entry.filename || path.basename(entry.path),
+      path: entry.path,
       trashedAt: entry.trashedAt || null,
-      url: `/uploads/${entry.trashedPath}`,
+      url: `/uploads/${entry.path}`,
     });
   }
 
   return items;
 }
 
+async function listBatches() {
+  const items = await listImages();
+  const batches = chunkArray(items, SLOT_COUNT).map((batchItems, index) => ({
+    index,
+    count: batchItems.length,
+    items: batchItems,
+  }));
+  const selectedIndex = await getSelectedBatchIndex(batches.length);
+  return {
+    batchSize: SLOT_COUNT,
+    selectedIndex,
+    batches: batches.map((batch) => ({
+      ...batch,
+      isSelected: batch.index === selectedIndex,
+    })),
+  };
+}
+
 async function listSlots() {
   const slotDefs = await readSlotDefinitions();
   const { ordered, statMap } = await getOrderedImages();
+  const trashSet = await getTrashSet();
 
   const activeSlots = slotDefs.filter(
     (slot) => !slot.disabled && Number.isFinite(slot.row) && Number.isFinite(slot.col)
@@ -490,9 +505,16 @@ async function listSlots() {
   }
 
   const visibleSlots = activeSlots.slice(0, SLOT_COUNT);
-  const visibleImages = ordered.slice(0, SLOT_COUNT);
+  const visibleImages = ordered.filter((relPath) => !trashSet.has(relPath));
+  const totalBatches = Math.ceil(visibleImages.length / SLOT_COUNT);
+  const selectedIndex = await getSelectedBatchIndex(totalBatches);
+  if (selectedIndex === null) {
+    return [];
+  }
+  const start = selectedIndex * SLOT_COUNT;
+  const batchImages = visibleImages.slice(start, start + SLOT_COUNT);
 
-  if (visibleImages.length === 0) {
+  if (batchImages.length === 0) {
     return [];
   }
 
@@ -501,10 +523,10 @@ async function listSlots() {
   const cellHeight = (cellWidth * DEFAULT_IMAGE_HEIGHT) / DEFAULT_IMAGE_WIDTH;
   const leftOrigin = OVERLAY_LEFT + PADDING_LEFT;
 
-  const count = Math.min(visibleSlots.length, visibleImages.length);
+  const count = Math.min(visibleSlots.length, batchImages.length);
   const items = await Promise.all(
     visibleSlots.slice(0, count).map(async (slot, index) => {
-      const relPath = visibleImages[index] || null;
+      const relPath = batchImages[index] || null;
       if (!relPath) {
         return null;
       }
@@ -592,15 +614,14 @@ async function handleUpload(req, res) {
 
       const buffer = Buffer.from(match[2], "base64");
       const timestamp = formatKstTimestamp(Date.now());
-      const { folder, dirPath } = await getUploadTargetDir();
-      const filename = await uniqueFilename(`paint-${timestamp}.png`, dirPath);
-      const filepath = path.join(dirPath, filename);
+      const filename = await uniqueFilename(`paint-${timestamp}.png`, UPLOAD_DIR);
+      const filepath = path.join(UPLOAD_DIR, filename);
       await fsp.writeFile(filepath, buffer);
 
       const payload = JSON.stringify({
         filename,
-        path: `${folder}/${filename}`,
-        url: `/uploads/${folder}/${filename}`,
+        path: filename,
+        url: `/uploads/${filename}`,
       });
       send(res, 200, payload, { "Content-Type": "application/json; charset=utf-8" });
     } catch (err) {
@@ -647,13 +668,8 @@ async function handleDelete(req, res, url) {
   }
 
   try {
-    const entry = await moveToTrash(target);
-    try {
-      await rebalanceBatches();
-    } catch (err) {
-      // ignore rebalance failures
-    }
-    send(res, 200, JSON.stringify({ path: entry.trashedPath }), {
+    const entry = await markAsTrashed(target);
+    send(res, 200, JSON.stringify({ path: entry.path }), {
       "Content-Type": "application/json; charset=utf-8",
     });
   } catch (err) {
@@ -669,9 +685,9 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (req.method === "GET" && url.pathname === "/api/list") {
+    if (!requireAdmin(req, res)) return;
     try {
-      const folder = url.searchParams.get("folder");
-      const items = await listImages(folder);
+      const items = await listImages();
       send(res, 200, JSON.stringify(items), { "Content-Type": "application/json; charset=utf-8" });
     } catch (err) {
       send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
@@ -680,6 +696,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/folders") {
+    if (!requireAdmin(req, res)) return;
     try {
       const folders = await listFolders();
       send(res, 200, JSON.stringify(folders), {
@@ -692,6 +709,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/trash") {
+    if (!requireAdmin(req, res)) return;
     try {
       const items = await listTrash();
       send(res, 200, JSON.stringify(items), {
@@ -703,7 +721,40 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/batches") {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const payload = await listBatches();
+      send(res, 200, JSON.stringify(payload), {
+        "Content-Type": "application/json; charset=utf-8",
+      });
+    } catch (err) {
+      send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/batches/select") {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const body = await readJsonBody(req);
+      const index = Number(body?.index);
+      if (!Number.isFinite(index) || index < 0) {
+        send(res, 400, "Invalid index", { "Content-Type": "text/plain; charset=utf-8" });
+        return;
+      }
+      await writeSelection(Math.floor(index));
+      send(res, 200, JSON.stringify({ ok: true }), {
+        "Content-Type": "application/json; charset=utf-8",
+      });
+    } catch (err) {
+      send(res, 500, "Server Error", { "Content-Type": "text/plain; charset=utf-8" });
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/restore") {
+    if (!requireAdmin(req, res)) return;
     try {
       const body = await readJsonBody(req);
       const id = body.id;
@@ -711,22 +762,12 @@ const server = http.createServer(async (req, res) => {
         send(res, 400, "Missing id", { "Content-Type": "text/plain; charset=utf-8" });
         return;
       }
-      const manifest = await readTrashManifest();
-      const idx = manifest.findIndex((entry) => entry.id === id);
-      if (idx === -1) {
+      const entry = await restoreTrashEntry(id);
+      if (!entry) {
         send(res, 404, "Not Found", { "Content-Type": "text/plain; charset=utf-8" });
         return;
       }
-      const entry = manifest[idx];
-      const restoredPath = await restoreFromTrash(entry);
-      manifest.splice(idx, 1);
-      await writeTrashManifest(manifest);
-      try {
-        await rebalanceBatches();
-      } catch (err) {
-        // ignore rebalance failures
-      }
-      send(res, 200, JSON.stringify({ path: restoredPath }), {
+      send(res, 200, JSON.stringify({ path: entry.path }), {
         "Content-Type": "application/json; charset=utf-8",
       });
     } catch (err) {
@@ -750,11 +791,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/login") {
+    await handleLogin(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/logout") {
+    await handleLogout(req, res);
+    return;
+  }
+
   if (req.method === "DELETE" && url.pathname === "/api/delete") {
+    if (!requireAdmin(req, res)) return;
     await handleDelete(req, res, url);
     return;
   }
   if (req.method === "POST" && url.pathname === "/api/delete") {
+    if (!requireAdmin(req, res)) return;
     await handleDelete(req, res, url);
     return;
   }

@@ -4,8 +4,35 @@ const titleEl = document.querySelector(".gallery-header h1");
 const backLink = document.querySelector("#galleryBack");
 const trashLink = document.querySelector("#galleryTrash");
 const params = new URLSearchParams(window.location.search);
-const folderParam = params.get("folder");
 const trashParam = params.get("trash");
+
+let authPrompting = false;
+
+async function ensureLogin() {
+  if (authPrompting) return false;
+  authPrompting = true;
+  const password = prompt("관리자 비밀번호를 입력하세요.");
+  authPrompting = false;
+  if (!password) return false;
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    alert("비밀번호가 올바르지 않습니다.");
+    return false;
+  }
+  return true;
+}
+
+async function fetchWithAuth(url, options) {
+  const res = await fetch(url, options);
+  if (res.status !== 401) return res;
+  const loggedIn = await ensureLogin();
+  if (!loggedIn) return res;
+  return fetch(url, options);
+}
 
 function showEmpty(message) {
   emptyEl.textContent = message;
@@ -16,38 +43,103 @@ function hideEmpty() {
   emptyEl.style.display = "none";
 }
 
-function renderGallery(items) {
-  gridEl.replaceChildren();
+function createGalleryCard(item, onDelete) {
+  const card = document.createElement("div");
+  card.className = "gallery-card";
 
-  if (!Array.isArray(items) || items.length === 0) {
+  const img = document.createElement("img");
+  img.src = item.url;
+  img.alt = item.filename;
+  img.loading = "lazy";
+
+  const label = document.createElement("p");
+  label.textContent = item.filename;
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "gallery-delete";
+  deleteBtn.type = "button";
+  deleteBtn.textContent = "삭제";
+  deleteBtn.addEventListener("click", onDelete);
+
+  card.appendChild(img);
+  card.appendChild(label);
+  card.appendChild(deleteBtn);
+  return card;
+}
+
+function renderBatches(payload) {
+  gridEl.replaceChildren();
+  gridEl.classList.remove("gallery-grid");
+  gridEl.classList.add("gallery-batches");
+
+  const batches = payload?.batches;
+  if (!Array.isArray(batches) || batches.length === 0) {
     showEmpty("아직 저장된 그림이 없습니다.");
     return;
   }
 
   hideEmpty();
-  items.forEach((item) => {
-    const card = document.createElement("div");
-    card.className = "gallery-card";
+  gridEl.classList.add("gallery-batches");
+  const batchSize = Number(payload?.batchSize) || 24;
+  const selectedIndex = Number(payload?.selectedIndex);
 
-    const img = document.createElement("img");
-    img.src = item.url;
-    img.alt = item.filename;
-    img.loading = "lazy";
+  batches.forEach((batch) => {
+    const section = document.createElement("section");
+    section.className = "gallery-batch";
+    if (batch.isSelected) {
+      section.classList.add("selected");
+    }
 
-    const label = document.createElement("p");
-    label.textContent = item.filename;
+    const header = document.createElement("div");
+    header.className = "gallery-batch-header";
 
-    const deleteBtn = document.createElement("button");
-    deleteBtn.className = "gallery-delete";
-    deleteBtn.type = "button";
-    deleteBtn.textContent = "삭제";
-    deleteBtn.addEventListener("click", async () => {
-      const ok = confirm("정말 삭제하시겠어요?");
-      if (!ok) return;
-      try {
-        const res = await fetch("/api/delete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+    const title = document.createElement("h2");
+    const batchNumber = Number(batch.index) + 1;
+    const count = Number(batch.count) || 0;
+    title.textContent = `묶음 ${batchNumber} (${count}/${batchSize})`;
+
+    const actions = document.createElement("div");
+    actions.className = "gallery-batch-actions";
+
+    const selectBtn = document.createElement("button");
+    selectBtn.type = "button";
+    selectBtn.className = "gallery-batch-select";
+    if (batch.isSelected || batch.index === selectedIndex) {
+      selectBtn.textContent = "Luux 표시중";
+      selectBtn.disabled = true;
+    } else {
+      selectBtn.textContent = "Luux에 표시";
+      selectBtn.addEventListener("click", async () => {
+        try {
+          const res = await fetchWithAuth("/api/batches/select", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ index: batch.index }),
+          });
+          if (!res.ok) throw new Error("Select failed");
+          await loadGallery();
+        } catch (err) {
+          alert("Luux 선택에 실패했습니다. 서버가 켜져있는지 확인해주세요.");
+        }
+      });
+    }
+
+    actions.appendChild(selectBtn);
+    header.appendChild(title);
+    header.appendChild(actions);
+
+    const grid = document.createElement("div");
+    grid.className = "gallery-grid gallery-batch-grid";
+
+    const items = Array.isArray(batch.items) ? batch.items : [];
+    items.forEach((item) => {
+      const card = createGalleryCard(item, async () => {
+        const ok = confirm("정말 삭제하시겠어요?");
+        if (!ok) return;
+        try {
+          const res = await fetchWithAuth("/api/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: item.path || item.filename }),
         });
         if (!res.ok) throw new Error("Delete failed");
@@ -55,17 +147,20 @@ function renderGallery(items) {
       } catch (err) {
         alert("삭제에 실패했습니다. 서버가 켜져있는지 확인해주세요.");
       }
+      });
+      grid.appendChild(card);
     });
 
-    card.appendChild(img);
-    card.appendChild(label);
-    card.appendChild(deleteBtn);
-    gridEl.appendChild(card);
+    section.appendChild(header);
+    section.appendChild(grid);
+    gridEl.appendChild(section);
   });
 }
 
 function renderTrash(items) {
   gridEl.replaceChildren();
+  gridEl.classList.remove("gallery-batches");
+  gridEl.classList.add("gallery-grid");
 
   if (!Array.isArray(items) || items.length === 0) {
     showEmpty("휴지통이 비어 있습니다.");
@@ -91,7 +186,7 @@ function renderTrash(items) {
     restoreBtn.textContent = "복원";
     restoreBtn.addEventListener("click", async () => {
       try {
-        const res = await fetch("/api/restore", {
+        const res = await fetchWithAuth("/api/restore", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id }),
@@ -110,49 +205,9 @@ function renderTrash(items) {
   });
 }
 
-function renderFolders(folders) {
-  gridEl.replaceChildren();
-
-  if (!Array.isArray(folders) || folders.length === 0) {
-    showEmpty("폴더가 없습니다.");
-    return;
-  }
-
-  hideEmpty();
-  folders.forEach((folder) => {
-    const card = document.createElement("a");
-    card.className = "gallery-card gallery-folder";
-    card.href = `/gallery.html?folder=${encodeURIComponent(folder.folder)}`;
-
-    const title = document.createElement("p");
-    title.className = "folder-title";
-    title.textContent = folder.folder;
-
-    const count = document.createElement("p");
-    count.className = "folder-count";
-    count.textContent = `${folder.count}장`;
-
-    card.appendChild(title);
-    card.appendChild(count);
-    gridEl.appendChild(card);
-  });
-}
-
-async function loadFolders() {
-  try {
-    const res = await fetch("/api/folders");
-    if (!res.ok) throw new Error("Failed to load folders");
-    const folders = await res.json();
-    renderFolders(folders);
-  } catch (err) {
-    gridEl.replaceChildren();
-    showEmpty("폴더 목록을 불러오지 못했습니다.");
-  }
-}
-
 async function loadTrash() {
   try {
-    const res = await fetch("/api/trash");
+    const res = await fetchWithAuth("/api/trash");
     if (!res.ok) throw new Error("Failed to load trash");
     const items = await res.json();
     renderTrash(items);
@@ -164,10 +219,10 @@ async function loadTrash() {
 
 async function loadGallery() {
   try {
-    const res = await fetch(`/api/list?folder=${encodeURIComponent(folderParam)}`);
+    const res = await fetchWithAuth("/api/batches");
     if (!res.ok) throw new Error("Failed to load gallery");
-    const items = await res.json();
-    renderGallery(items);
+    const payload = await res.json();
+    renderBatches(payload);
   } catch (err) {
     gridEl.replaceChildren();
     showEmpty("갤러리를 불러오지 못했습니다.");
@@ -185,23 +240,15 @@ if (trashParam) {
     trashLink.style.display = "none";
   }
   loadTrash();
-} else if (folderParam) {
-  if (titleEl) {
-    titleEl.textContent = `폴더: ${folderParam}`;
-  }
-  if (backLink) {
-    backLink.style.display = "inline-flex";
-  }
-  if (trashLink) {
-    trashLink.style.display = "inline-flex";
-  }
-  loadGallery();
 } else {
+  if (titleEl) {
+    titleEl.textContent = "저장된 그림";
+  }
   if (backLink) {
     backLink.style.display = "none";
   }
   if (trashLink) {
     trashLink.style.display = "inline-flex";
   }
-  loadFolders();
+  loadGallery();
 }

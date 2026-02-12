@@ -72,6 +72,55 @@ body.gallery {
   gap: 16px;
 }
 
+.gallery-batches {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.gallery-batch {
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.gallery-batch.selected {
+  border: 2px solid #2f2f2f;
+}
+
+.gallery-batch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.gallery-batch-header h2 {
+  font-size: 16px;
+}
+
+.gallery-batch-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.gallery-batch-select {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: #2f2f2f;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gallery-batch-select:disabled {
+  background: #888;
+  cursor: default;
+}
+
 .gallery-card {
   background: #fff;
   border-radius: 12px;
