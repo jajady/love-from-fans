@@ -2,7 +2,7 @@ const canvas = document.querySelector("canvas");
 const ctx = canvas.getContext("2d");
 canvas.style.touchAction = "none";
 
-const colorBtns = document.querySelectorAll(".pallet button");
+const colorBtns = document.querySelectorAll(".color-btn");
 const eraserBtn = document.querySelector("#eraser");
 const downloadBtn = document.querySelector("#download");
 const undoBtn = document.querySelector("#undo");

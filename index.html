@@ -12,27 +12,45 @@
       <p class="title-sub">Leave a message for BTS!</p>
     </header>
     <main>
-      <canvas width="792" height="652"></canvas>
+      <canvas width="800" height="670"></canvas>
       <aside>
         <div>
           <div class="tool-title-container">
             <h2>Tool</h2>
-            <button class="undo-btn" id="undo">
-              <img class="undo-btn-img" src="./assets/icons/back.png" />
+            <button class="undo-btn" id="undo" aria-label="되돌리기">
+              <img
+                class="undo-btn-img"
+                src="./assets/icons/back.png"
+                alt="되돌리기"
+              />
             </button>
           </div>
           <ul class="tool">
             <li>
-              <button class="color-btn black selected" data-color="black">
-                black
+              <button
+                class="color-btn black selected"
+                data-color="black"
+                aria-label="검정색"
+              >
+                <span class="sr-only">black</span>
               </button>
             </li>
             <li>
-              <button class="color-btn red" data-color="red">red</button>
+              <button
+                class="color-btn red"
+                data-color="red"
+                aria-label="빨간색"
+              >
+                <span class="sr-only">red</span>
+              </button>
             </li>
             <li>
-              <button class="erase-btn" id="eraser">
-                <img class="erase-img" src="./assets/icons/eraser.png" />
+              <button class="erase-btn" id="eraser" aria-label="지우개">
+                <img
+                  class="erase-img"
+                  src="./assets/icons/eraser.png"
+                  alt="지우개"
+                />
               </button>
             </li>
           </ul>
@@ -42,49 +60,56 @@
           <h2 class="sticker-title">Sticker</h2>
           <div class="stickers">
             <div class="big-sticker-container">
-              <button class="big-sticker">
+              <button class="big-sticker" aria-label="스티커 1">
                 <img
                   class="big-sticker-img"
                   src="./assets/stickers/sticker_1.png"
+                  alt="스티커 1"
                 />
               </button>
-              <button class="big-sticker">
+              <button class="big-sticker" aria-label="스티커 2">
                 <img
                   class="big-sticker-img"
                   src="./assets/stickers/sticker_2.png"
+                  alt="스티커 2"
                 />
               </button>
-              <button class="big-sticker">
+              <button class="big-sticker" aria-label="스티커 3">
                 <img
                   class="big-sticker-img"
                   src="./assets/stickers/sticker_3.png"
+                  alt="스티커 3"
                 />
               </button>
             </div>
 
             <div class="small-sticker-container">
-              <button class="small-sticker">
+              <button class="small-sticker" aria-label="스티커 4">
                 <img
                   class="small-sticker-img"
                   src="./assets/stickers/sticker_4.png"
+                  alt="스티커 4"
                 />
               </button>
-              <button class="small-sticker">
+              <button class="small-sticker" aria-label="스티커 5">
                 <img
                   class="small-sticker-img"
                   src="./assets/stickers/sticker_5.png"
+                  alt="스티커 5"
                 />
               </button>
-              <button class="small-sticker">
+              <button class="small-sticker" aria-label="스티커 6">
                 <img
                   class="small-sticker-img"
                   src="./assets/stickers/sticker_6.png"
+                  alt="스티커 6"
                 />
               </button>
-              <button class="small-sticker">
+              <button class="small-sticker" aria-label="스티커 7">
                 <img
                   class="small-sticker-img"
                   src="./assets/stickers/sticker_7.png"
+                  alt="스티커 7"
                 />
               </button>
             </div>
