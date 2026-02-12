@@ -1,0 +1,1 @@
+import "./paint/index.js";
