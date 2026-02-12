@@ -7,35 +7,96 @@
     <link rel="stylesheet" href="styles/index.css" />
   </head>
   <body>
+    <header class="title">
+      <h1 class="title-main">BTS에게 메시지를 남겨주세요!</h1>
+      <p class="title-sub">Leave a message for BTS!</p>
+    </header>
     <main>
+      <canvas width="792" height="652"></canvas>
       <aside>
-        <ul class="pallet">
-          <li>
-            <button class="black selected" data-color="black">black</button>
-          </li>
-          <li>
-            <button class="blue" data-color="blue">blue</button>
-          </li>
-          <li>
-            <button class="red" data-color="red">red</button>
-          </li>
-          <li>
-            <button class="green" data-color="green">green</button>
-          </li>
-        </ul>
+        <div>
+          <div class="tool-title-container">
+            <h2>Tool</h2>
+            <button class="undo-btn" id="undo">
+              <img class="undo-btn-img" src="./assets/icons/back.png" />
+            </button>
+          </div>
+          <ul class="tool">
+            <li>
+              <button class="color-btn black selected" data-color="black">
+                black
+              </button>
+            </li>
+            <li>
+              <button class="color-btn red" data-color="red">red</button>
+            </li>
+            <li>
+              <button class="erase-btn" id="eraser">
+                <img class="erase-img" src="./assets/icons/eraser.png" />
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="sticker-container">
+          <h2 class="sticker-title">Sticker</h2>
+          <div class="stickers">
+            <div class="big-sticker-container">
+              <button class="big-sticker">
+                <img
+                  class="big-sticker-img"
+                  src="./assets/stickers/sticker_1.png"
+                />
+              </button>
+              <button class="big-sticker">
+                <img
+                  class="big-sticker-img"
+                  src="./assets/stickers/sticker_2.png"
+                />
+              </button>
+              <button class="big-sticker">
+                <img
+                  class="big-sticker-img"
+                  src="./assets/stickers/sticker_3.png"
+                />
+              </button>
+            </div>
+
+            <div class="small-sticker-container">
+              <button class="small-sticker">
+                <img
+                  class="small-sticker-img"
+                  src="./assets/stickers/sticker_4.png"
+                />
+              </button>
+              <button class="small-sticker">
+                <img
+                  class="small-sticker-img"
+                  src="./assets/stickers/sticker_5.png"
+                />
+              </button>
+              <button class="small-sticker">
+                <img
+                  class="small-sticker-img"
+                  src="./assets/stickers/sticker_6.png"
+                />
+              </button>
+              <button class="small-sticker">
+                <img
+                  class="small-sticker-img"
+                  src="./assets/stickers/sticker_7.png"
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+
         <ul>
           <li>
-            <button class="control-btn" id="eraser">지우개</button>
-          </li>
-          <li>
-            <button class="control-btn" id="undo">이전</button>
-          </li>
-          <li>
-            <button class="control-btn" id="download">저장</button>
+            <button class="save-btn" id="download">저장</button>
           </li>
         </ul>
       </aside>
-      <canvas width="600" height="400"></canvas>
     </main>
     <script src="scripts/main.js"></script>
   </body>
